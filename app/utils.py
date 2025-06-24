@@ -12,11 +12,11 @@ def validate_api_key(key):
 
 def compress_pdf(in_path, out_path, compression_level="ebook"):
     allowed = ["screen", "ebook", "printer", "prepress"]
-    setting = f"/{compression_level}" if compression_level in allowed else "/ebook"
+    setting = compression_level if compression_level in allowed else "ebook"
 
     subprocess.run([
         "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
-        f"-dPDFSETTINGS={setting}", "-dNOPAUSE", "-dQUIET", "-dBATCH",
+        f"-dPDFSETTINGS=/{setting}", "-dNOPAUSE", "-dQUIET", "-dBATCH",
         f"-sOutputFile={out_path}", in_path
     ], check=True)
 
