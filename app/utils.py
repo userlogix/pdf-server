@@ -11,8 +11,13 @@ def validate_api_key(key):
         raise HTTPException(status_code=403, detail="Invalid API Key")
 
 def compress_pdf(in_path, out_path, compression_level="ebook"):
-    allowed = ["screen", "ebook", "printer", "prepress"]
-    setting = f"/{compression_level}" if compression_level in allowed else "/ebook"
+    allowed = {
+        "screen": "/screen",
+        "ebook": "/ebook",
+        "printer": "/printer",
+        "prepress": "/prepress"
+    }
+    setting = allowed.get(compression_level, "/ebook")
 
     subprocess.run([
         "gs", "-sDEVICE=pdfwrite", "-dCompatibilityLevel=1.4",
