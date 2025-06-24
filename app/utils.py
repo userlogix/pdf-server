@@ -21,11 +21,20 @@ def compress_pdf(in_path, out_path, compression_level="ebook"):
     ], check=True)
 
 def download_pdf(url, save_path):
-    r = requests.get(url)
-    if r.status_code != 200:
-        raise HTTPException(status_code=400, detail="Failed to download PDF")
-    with open(save_path, "wb") as f:
-        f.write(r.content)
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get(url, stream=True, headers=headers, timeout=60)
+        content_type = r.headers.get("Content-Type", "")
+        if r.status_code != 200 or "application/pdf" not in content_type:
+            raise HTTPException(status_code=400, detail=f"Failed to download PDF: {r.status_code}, content_type: {content_type}")
+
+        with open(save_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Download error: {str(e)}")
 
 def generate_temp_url(path):
     filename = os.path.basename(path)
