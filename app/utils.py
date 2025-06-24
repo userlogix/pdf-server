@@ -25,7 +25,7 @@ def download_pdf(url, save_path):
     try:
         r = requests.get(url, stream=True, headers=headers, timeout=60)
         content_type = r.headers.get("Content-Type", "")
-        if r.status_code != 200 or "application/pdf" not in content_type:
+        if r.status_code != 200 or not any(t in content_type for t in ["application/pdf", "application/octet-stream", "binary/octet-stream"]):
             raise HTTPException(status_code=400, detail=f"Failed to download PDF: {r.status_code}, content_type: {content_type}")
 
         with open(save_path, "wb") as f:
