@@ -3,12 +3,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from enum import Enum
 from typing import List, Optional
-import uuid, os, shutil, base64, zipfile
-from datetime import datetime, timedelta
+import uuid, os, shutil, base64, zipfile, subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from app.utils import compress_pdf, download_pdf, generate_temp_url, validate_api_key
 import asyncio
 import logging
+import magic
+import requests
 
 # Branded, clean FastAPI Swagger
 app = FastAPI(
@@ -431,7 +433,7 @@ async def split_pdf(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF split error: {str(e)}")
 
-@app.post("/watermark")
+@app.post("/watermark", tags=["PDF Enhancement"])
 async def add_watermark(
     request: Request,
     file: UploadFile = File(None),
@@ -509,7 +511,7 @@ async def add_watermark(
 
     return return_file_response(output_path, return_type, "watermarked.pdf", input_path)
 
-@app.post("/password-protect")
+@app.post("/password-protect", tags=["PDF Enhancement"])
 async def password_protect(
     request: Request,
     file: UploadFile = File(None),
@@ -551,7 +553,7 @@ async def password_protect(
 
     return return_file_response(output_path, return_type, "protected.pdf", input_path)
 
-@app.post("/password-remove")
+@app.post("/password-remove", tags=["PDF Enhancement"])
 async def password_remove(
     request: Request,
     file: UploadFile = File(None),
@@ -597,6 +599,7 @@ async def password_remove(
 
     return return_file_response(output_path, return_type, "unlocked.pdf", input_path)
 
+@app.post("/convert-to-pdf", tags=["Document Conversion"])
 async def convert_to_pdf(
     request: Request,
     file: UploadFile = File(None),
@@ -629,7 +632,6 @@ async def convert_to_pdf(
                 shutil.copyfileobj(file.file, f)
         else:
             # Download file
-            import requests
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(file_url, stream=True, headers=headers, timeout=60)
             if r.status_code != 200:
@@ -663,7 +665,6 @@ async def convert_to_pdf(
                         f.write(chunk)
 
         # Detect file type and convert
-        import magic
         mime_type = magic.from_file(input_path, mime=True)
         file_extension = input_path.split(".")[-1].lower() if "." in input_path else ""
         
@@ -721,7 +722,6 @@ async def convert_to_pdf(
         ] or file_extension in ["docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "rtf", "txt"]):
             
             # Use LibreOffice to convert
-            import subprocess
             
             # Create temp directory for LibreOffice output
             temp_dir = os.path.dirname(input_path)
@@ -976,69 +976,356 @@ async def merge_with_bookmarks(
 
     return return_file_response(output_path, return_type, "bookmarked.pdf")
 
-@app.delete("/delete", tags=["Cache Management"])
-async def delete_files(
+@app.post("/prepare-document", tags=["Advanced Operations"],
+         summary="Comprehensive document preparation pipeline",
+         description="One-stop endpoint: converts any document to optimized, letter-size, unprotected PDF. Handles orientation detection and forced password removal.")
+async def prepare_document(
     request: Request,
-    filenames: str = Form(..., description="Comma-separated list of filenames to delete")
+    file: UploadFile = File(None),
+    file_url: str = Form(None),
+    force_password_removal: bool = Form(True, description="Attempt password removal without knowing password"),
+    target_compression: CompressionLevel = Form(CompressionLevel.ebook, description="Target compression level"),
+    max_file_size_mb: float = Form(8.0, description="Target maximum file size in MB"),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
 ):
+    """
+    Comprehensive document preparation pipeline that:
+    1. Converts any document type to PDF
+    2. Attempts forced password removal
+    3. Detects orientation and resizes to letter size intelligently
+    4. Optimizes file size with progressive compression
+    5. Returns processing metadata
+    """
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
     
-    files_to_delete = [f.strip() for f in filenames.split(",") if f.strip()]
-    deleted = []
-    not_found = []
+    lazy_cleanup()
+
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Send file or file_url")
+
+    # Initialize file paths
+    input_path = os.path.join(TEMP_DIR, f"prepare_in_{uuid.uuid4()}")
+    working_path = os.path.join(TEMP_DIR, f"prepare_work_{uuid.uuid4()}.pdf")
+    output_path = os.path.join(TEMP_DIR, f"prepare_out_{uuid.uuid4()}.pdf")
     
-    for filename in files_to_delete:
-        file_path = os.path.join(TEMP_DIR, filename)
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                deleted.append(filename)
-            except Exception as e:
-                not_found.append({"filename": filename, "error": str(e)})
+    processing_log = []
+    is_password_protected = False
+    original_size = 0
+
+    try:
+        # Step 1: Download/save and detect file type
+        processing_log.append("Starting document preparation")
+        
+        if file:
+            filename = file.filename or "document"
+            file_ext = filename.split(".")[-1].lower() if "." in filename else ""
+            input_path += f".{file_ext}" if file_ext else ""
+            
+            with open(input_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
         else:
-            not_found.append({"filename": filename, "error": "File not found"})
-    
-    return {
-        "deleted": deleted,
-        "not_found": not_found,
-        "total_deleted": len(deleted)
-    }
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(file_url, stream=True, headers=headers, timeout=60)
+            if r.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Failed to download file: {r.status_code}")
+            
+            # Auto-detect extension
+            url_ext = file_url.split(".")[-1].lower() if "." in file_url else ""
+            content_type = r.headers.get("Content-Type", "")
+            
+            if url_ext in ["pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "txt", "rtf", "odt", "jpg", "jpeg", "png"]:
+                input_path += f".{url_ext}"
+            elif "pdf" in content_type:
+                input_path += ".pdf"
+            elif "word" in content_type or "document" in content_type:
+                input_path += ".docx"
+            elif "excel" in content_type or "spreadsheet" in content_type:
+                input_path += ".xlsx"
+            elif "powerpoint" in content_type or "presentation" in content_type:
+                input_path += ".pptx"
+            elif "image" in content_type:
+                if "jpeg" in content_type:
+                    input_path += ".jpg"
+                elif "png" in content_type:
+                    input_path += ".png"
+                else:
+                    input_path += ".jpg"
+            
+            with open(input_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+        
+        original_size = os.path.getsize(input_path)
+        processing_log.append(f"Input file size: {original_size / 1024 / 1024:.2f} MB")
 
-@app.delete("/clear-cache", tags=["Cache Management"])
-async def clear_cache(
-    request: Request,
-    older_than_minutes: Optional[int] = Form(None, description="Only delete files older than X minutes")
-):
-    api_key = request.headers.get("x-api-key")
-    validate_api_key(api_key)
-    
-    folder = Path(TEMP_DIR)
-    deleted = []
-    errors = []
-    cutoff_time = None
-    
-    if older_than_minutes:
-        cutoff_time = datetime.now().timestamp() - (older_than_minutes * 60)
-    
-    for file_path in folder.glob("*"):
-        try:
-            if cutoff_time and file_path.stat().st_mtime > cutoff_time:
-                continue
+        # Step 2: Convert to PDF if needed
+        mime_type = magic.from_file(input_path, mime=True)
+        file_extension = input_path.split(".")[-1].lower() if "." in input_path else ""
+        
+        if mime_type == "application/pdf" or file_extension == "pdf":
+            shutil.copy2(input_path, working_path)
+            processing_log.append("Already PDF - skipped conversion")
+        else:
+            processing_log.append(f"Converting {mime_type} to PDF")
+            
+            # Images - use ReportLab
+            if mime_type.startswith("image/") or file_extension in ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]:
+                from reportlab.pdfgen import canvas
+                from reportlab.lib.pagesizes import letter
+                from PIL import Image
                 
-            file_path.unlink()
-            deleted.append(file_path.name)
-        except Exception as e:
-            errors.append({"filename": file_path.name, "error": str(e)})
-    
-    return {
-        "deleted": deleted,
-        "errors": errors,
-        "total_deleted": len(deleted),
-        "filter": f"Files older than {older_than_minutes} minutes" if older_than_minutes else "All files"
-    }
+                img = Image.open(input_path)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                
+                # Smart orientation detection
+                img_width, img_height = img.size
+                is_landscape = img_width > img_height
+                
+                if is_landscape:
+                    page_size = (letter[1], letter[0])  # Landscape letter
+                    processing_log.append("Detected landscape orientation")
+                else:
+                    page_size = letter  # Portrait letter
+                    processing_log.append("Detected portrait orientation")
+                
+                page_width, page_height = page_size
+                available_width = page_width - 40  # margins
+                available_height = page_height - 40
+                
+                # Scale to fit
+                scale_w = available_width / img_width
+                scale_h = available_height / img_height
+                scale = min(scale_w, scale_h)
+                
+                new_width = img_width * scale
+                new_height = img_height * scale
+                
+                c = canvas.Canvas(working_path, pagesize=page_size)
+                x = (page_width - new_width) / 2
+                y = (page_height - new_height) / 2
+                c.drawImage(input_path, x, y, width=new_width, height=new_height)
+                c.save()
+                
+            # Office documents - use LibreOffice
+            elif (mime_type in [
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # docx
+                "application/msword",  # doc
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # xlsx
+                "application/vnd.ms-excel",  # xls
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # pptx
+                "application/vnd.ms-powerpoint",  # ppt
+                "application/vnd.oasis.opendocument.text",  # odt
+                "application/rtf",  # rtf
+                "text/plain"  # txt
+            ] or file_extension in ["docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "rtf", "txt"]):
+                
+                temp_dir = os.path.dirname(input_path)
+                
+                result = subprocess.run([
+                    "libreoffice", "--headless", "--convert-to", "pdf",
+                    "--outdir", temp_dir, input_path
+                ], capture_output=True, text=True, timeout=120)
+                
+                if result.returncode != 0:
+                    raise HTTPException(status_code=500, detail=f"LibreOffice conversion failed: {result.stderr}")
+                
+                base_name = os.path.splitext(os.path.basename(input_path))[0]
+                converted_pdf = os.path.join(temp_dir, f"{base_name}.pdf")
+                
+                if not os.path.exists(converted_pdf):
+                    raise HTTPException(status_code=500, detail="Conversion completed but PDF not found")
+                
+                shutil.move(converted_pdf, working_path)
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported file type: {mime_type}")
 
-@app.post("/image-to-pdf")
+        # Step 3: Attempt forced password removal
+        if force_password_removal:
+            try:
+                from PyPDF2 import PdfReader, PdfWriter
+                temp_path = working_path.replace(".pdf", "_temp.pdf")
+                
+                reader = PdfReader(working_path)
+                if reader.is_encrypted:
+                    processing_log.append("PDF is password protected - attempting removal")
+                    
+                    # Try common passwords first
+                    common_passwords = ["", "123456", "password", "admin", "user", "pdf", "document"]
+                    decrypted = False
+                    
+                    for pwd in common_passwords:
+                        if reader.decrypt(pwd):
+                            decrypted = True
+                            processing_log.append(f"Successfully decrypted with common password")
+                            break
+                    
+                    if not decrypted:
+                        # Force decryption using ghostscript
+                        try:
+                            subprocess.run([
+                                "gs", "-q", "-dNOPAUSE", "-dBATCH", "-sDEVICE=pdfwrite",
+                                "-sOutputFile=" + temp_path, "-c", ".setpdfwrite", "-f", working_path
+                            ], check=True, capture_output=True)
+                            
+                            if os.path.exists(temp_path):
+                                shutil.move(temp_path, working_path)
+                                processing_log.append("Forced password removal successful")
+                            else:
+                                is_password_protected = True
+                                processing_log.append("Failed to remove password protection")
+                        except:
+                            is_password_protected = True
+                            processing_log.append("Failed to remove password protection")
+                    else:
+                        # Re-save without encryption
+                        writer = PdfWriter()
+                        for page in reader.pages:
+                            writer.add_page(page)
+                        
+                        with open(temp_path, "wb") as f:
+                            writer.write(f)
+                        shutil.move(temp_path, working_path)
+                else:
+                    processing_log.append("PDF is not password protected")
+                    
+            except Exception as e:
+                processing_log.append(f"Password removal error: {str(e)}")
+
+        # Step 4: Smart resize to letter size with orientation detection
+        try:
+            from PyPDF2 import PdfReader, PdfWriter
+            from reportlab.lib.pagesizes import letter
+            
+            reader = PdfReader(working_path)
+            writer = PdfWriter()
+            
+            letter_width, letter_height = letter
+            resize_path = working_path.replace(".pdf", "_resized.pdf")
+            
+            for page in reader.pages:
+                page_width = float(page.mediabox.width)
+                page_height = float(page.mediabox.height)
+                
+                # Detect if page is landscape
+                is_page_landscape = page_width > page_height
+                
+                # Choose target size based on page orientation
+                if is_page_landscape:
+                    target_width, target_height = letter_height, letter_width  # Landscape letter
+                else:
+                    target_width, target_height = letter_width, letter_height  # Portrait letter
+                
+                # Calculate scaling
+                scale_x = target_width / page_width
+                scale_y = target_height / page_height
+                scale = min(scale_x, scale_y)  # Maintain aspect ratio
+                
+                # Apply scaling
+                page.scale(scale, scale)
+                
+                # Center on page
+                new_width = page_width * scale
+                new_height = page_height * scale
+                x_offset = (target_width - new_width) / 2
+                y_offset = (target_height - new_height) / 2
+                
+                page.mediabox.lower_left = (x_offset, y_offset)
+                page.mediabox.upper_right = (x_offset + new_width, y_offset + new_height)
+                
+                writer.add_page(page)
+            
+            with open(resize_path, "wb") as f:
+                writer.write(f)
+            
+            shutil.move(resize_path, working_path)
+            processing_log.append("Resized to letter size with orientation detection")
+            
+        except Exception as e:
+            processing_log.append(f"Resize warning: {str(e)}")
+
+        # Step 5: Progressive compression until target size is reached
+        current_path = working_path
+        compression_levels = ["screen", "ebook", "printer", "prepress"]
+        target_level_index = compression_levels.index(target_compression)
+        
+        for i in range(target_level_index, len(compression_levels)):
+            level = compression_levels[i]
+            compress_path = working_path.replace(".pdf", f"_compress_{level}.pdf")
+            
+            try:
+                compress_pdf(current_path, compress_path, compression_level=level)
+                
+                # Check file size
+                compressed_size = os.path.getsize(compress_path)
+                size_mb = compressed_size / 1024 / 1024
+                
+                processing_log.append(f"Compression {level}: {size_mb:.2f} MB")
+                
+                if size_mb <= max_file_size_mb or i == len(compression_levels) - 1:
+                    shutil.move(compress_path, output_path)
+                    processing_log.append(f"Final compression: {level}")
+                    break
+                else:
+                    current_path = compress_path
+                    
+            except Exception as e:
+                processing_log.append(f"Compression {level} failed: {str(e)}")
+                if i == target_level_index:
+                    # First compression failed, just copy
+                    shutil.copy2(current_path, output_path)
+                    break
+
+        # Cleanup temporary files
+        for temp_file in [input_path, working_path]:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+
+        # Generate response with comprehensive metadata
+        final_size = os.path.getsize(output_path)
+        final_size_mb = final_size / 1024 / 1024
+        size_reduction = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
+
+        base_response = {
+            "original_size_mb": round(original_size / 1024 / 1024, 2),
+            "final_size_mb": round(final_size_mb, 2),
+            "size_reduction_percent": round(size_reduction, 2),
+            "is_password_protected": is_password_protected,
+            "processing_log": processing_log,
+            "status": "success" if not is_password_protected else "success_with_protection"
+        }
+
+        if return_type == "binary":
+            return FileResponse(output_path, media_type="application/pdf", filename="prepared_document.pdf")
+        
+        elif return_type == "url":
+            url, expires = generate_temp_url(output_path)
+            return {
+                "url": url,
+                "expires_at": expires.isoformat(),
+                **base_response
+            }
+        
+        elif return_type == "base64":
+            with open(output_path, "rb") as f:
+                content = base64.b64encode(f.read()).decode()
+            return {
+                "filename": "prepared_document.pdf",
+                "content_type": "application/pdf",
+                "content_base64": content,
+                **base_response
+            }
+
+    except Exception as e:
+        # Cleanup on error
+        for temp_file in [input_path, working_path, output_path]:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+        raise HTTPException(status_code=500, detail=f"Document preparation error: {str(e)}")
+
+@app.post("/image-to-pdf", tags=["Document Conversion"])
 async def image_to_pdf(
     request: Request,
     file: UploadFile = File(None),
@@ -1065,7 +1352,6 @@ async def image_to_pdf(
                 shutil.copyfileobj(file.file, f)
         else:
             # Download image
-            import requests
             headers = {"User-Agent": "Mozilla/5.0"}
             r = requests.get(file_url, stream=True, headers=headers, timeout=60)
             if r.status_code != 200:
@@ -1144,7 +1430,7 @@ async def image_to_pdf(
 
     return return_file_response(output_path, return_type, "image_document.pdf")
 
-@app.post("/add-page-numbers")
+@app.post("/add-page-numbers", tags=["PDF Enhancement"])
 async def add_page_numbers(
     request: Request,
     file: UploadFile = File(None),
@@ -1223,7 +1509,7 @@ async def add_page_numbers(
 
     return return_file_response(output_path, return_type, "numbered.pdf", input_path)
 
-@app.post("/resize-to-letter")
+@app.post("/resize-to-letter", tags=["PDF Enhancement"])
 async def resize_to_letter(
     request: Request,
     file: UploadFile = File(None),
@@ -1288,7 +1574,7 @@ async def resize_to_letter(
 
     return return_file_response(output_path, return_type, "letter_size.pdf", input_path)
 
-@app.post("/extract-text")
+@app.post("/extract-text", tags=["Text & OCR"])
 async def extract_text(
     request: Request,
     file: UploadFile = File(None),
@@ -1365,94 +1651,67 @@ async def extract_text(
             os.remove(input_path)
         raise HTTPException(status_code=500, detail=f"Text extraction error: {str(e)}")
 
-@app.post("/merge-with-bookmarks")
-async def merge_with_bookmarks(
+@app.delete("/delete", tags=["Cache Management"])
+async def delete_files(
     request: Request,
-    files: List[UploadFile] = File(None),
-    file_urls: str = Form(None, description="Comma-separated URLs"),
-    titles: str = Form(..., description="Comma-separated bookmark titles (must match order of files)"),
-    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+    filenames: str = Form(..., description="Comma-separated list of filenames to delete")
 ):
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
-
-    # Parse titles
-    title_list = [t.strip() for t in titles.split(",") if t.strip()]
     
-    # Parse URLs if provided
-    urls = []
-    if file_urls:
-        urls = [url.strip() for url in file_urls.split(",") if url.strip()]
+    files_to_delete = [f.strip() for f in filenames.split(",") if f.strip()]
+    deleted = []
+    not_found = []
     
-    if not files and not urls:
-        raise HTTPException(status_code=400, detail="Send files or file_urls")
+    for filename in files_to_delete:
+        file_path = os.path.join(TEMP_DIR, filename)
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                deleted.append(filename)
+            except Exception as e:
+                not_found.append({"filename": filename, "error": str(e)})
+        else:
+            not_found.append({"filename": filename, "error": "File not found"})
     
-    if not files:
-        files = []
+    return {
+        "deleted": deleted,
+        "not_found": not_found,
+        "total_deleted": len(deleted)
+    }
+
+@app.delete("/clear-cache", tags=["Cache Management"])
+async def clear_cache(
+    request: Request,
+    older_than_minutes: Optional[int] = Form(None, description="Only delete files older than X minutes")
+):
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
     
-    # Validate that we have the same number of titles as files
-    total_files = len(files) + len(urls)
-    if len(title_list) != total_files:
-        raise HTTPException(status_code=400, detail=f"Number of titles ({len(title_list)}) must match number of files ({total_files})")
-
-    output_path = os.path.join(TEMP_DIR, f"bookmarked_{uuid.uuid4()}.pdf")
-    input_paths = []
-
-    try:
-        from PyPDF2 import PdfWriter, PdfReader
-        writer = PdfWriter()
-        current_page = 0
-        
-        # Process uploaded files
-        for i, file in enumerate(files):
-            input_path = os.path.join(TEMP_DIR, f"bookmark_in_{uuid.uuid4()}.pdf")
-            input_paths.append(input_path)
-            with open(input_path, "wb") as f:
-                shutil.copyfileobj(file.file, f)
-            
-            reader = PdfReader(input_path)
-            
-            # Add bookmark at current page
-            writer.add_outline_item(title_list[i], current_page)
-            
-            # Add all pages from this file
-            for page in reader.pages:
-                writer.add_page(page)
-                current_page += 1
-
-        # Process URLs
-        url_start_index = len(files)
-        for i, url in enumerate(urls):
-            input_path = os.path.join(TEMP_DIR, f"bookmark_url_{uuid.uuid4()}.pdf")
-            input_paths.append(input_path)
-            download_pdf(url, input_path)
-            
-            reader = PdfReader(input_path)
-            title_index = url_start_index + i
-            
-            # Add bookmark at current page
-            writer.add_outline_item(title_list[title_index], current_page)
-            
-            # Add all pages from this file
-            for page in reader.pages:
-                writer.add_page(page)
-                current_page += 1
-
-        with open(output_path, "wb") as f:
-            writer.write(f)
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Bookmark merge error: {str(e)}")
-    finally:
-        # Cleanup input files
-        for path in input_paths:
-            if os.path.exists(path):
-                os.remove(path)
-
-    return return_file_response(output_path, return_type, "bookmarked.pdf")
-
-# Cache status endpoint
-from datetime import timezone
+    folder = Path(TEMP_DIR)
+    deleted = []
+    errors = []
+    cutoff_time = None
+    
+    if older_than_minutes:
+        cutoff_time = datetime.now().timestamp() - (older_than_minutes * 60)
+    
+    for file_path in folder.glob("*"):
+        try:
+            if cutoff_time and file_path.stat().st_mtime > cutoff_time:
+                continue
+                
+            file_path.unlink()
+            deleted.append(file_path.name)
+        except Exception as e:
+            errors.append({"filename": file_path.name, "error": str(e)})
+    
+    return {
+        "deleted": deleted,
+        "errors": errors,
+        "total_deleted": len(deleted),
+        "filter": f"Files older than {older_than_minutes} minutes" if older_than_minutes else "All files"
+    }
 
 @app.get("/cache/status", tags=["Cache Management"])
 def cache_status(request: Request):
