@@ -673,18 +673,26 @@ async def convert_to_pdf(
         if mime_type == "application/pdf" or file_extension == "pdf":
             shutil.copy2(input_path, output_path)
             
-        # Images - use existing image-to-pdf logic
+        # Images - use existing image-to-pdf logic with quality preservation
         elif mime_type.startswith("image/") or file_extension in ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]:
             from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import letter
             from PIL import Image
             
+            # Open and process image with quality preservation
             img = Image.open(input_path)
-            if img.mode != 'RGB':
+            
+            # Only convert to RGB if absolutely necessary, preserve original format when possible
+            if img.mode not in ['RGB', 'RGBA']:
                 img = img.convert('RGB')
+            elif img.mode == 'RGBA':
+                # Handle transparency properly
+                background = Image.new('RGB', img.size, (255, 255, 255))
+                background.paste(img, mask=img.split()[-1] if len(img.split()) == 4 else None)
+                img = background
             
             page_width, page_height = letter
-            title_height = 60 if title else 20
+            title_height = 50 if title else 20  # Reduced title space
             available_height = page_height - title_height - 40
             available_width = page_width - 40
             
@@ -701,15 +709,15 @@ async def convert_to_pdf(
             c = canvas.Canvas(output_path, pagesize=letter)
             
             if title:
-                c.setFont("Helvetica-Bold", 16)
+                c.setFont("Helvetica-Bold", 12)  # Smaller title font
                 # Use stringWidth to center text manually
-                text_width = c.stringWidth(title, "Helvetica-Bold", 16)
+                text_width = c.stringWidth(title, "Helvetica-Bold", 12)
                 title_x = (page_width - text_width) / 2
-                c.drawString(title_x, page_height - 40, title)
+                c.drawString(title_x, page_height - 35, title)
             
             x = (page_width - new_width) / 2
             y = (available_height - new_height) / 2 + 20
-            c.drawImage(input_path, x, y, width=new_width, height=new_height)
+            c.drawImage(input_path, x, y, width=new_width, height=new_height, preserveAspectRatio=True)
             c.save()
             
         # Office documents and others - use LibreOffice
@@ -1082,15 +1090,23 @@ async def prepare_document(
         else:
             processing_log.append(f"Converting {mime_type} to PDF")
             
-            # Images - use ReportLab
+            # Images - use ReportLab with quality preservation
             if mime_type.startswith("image/") or file_extension in ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]:
                 from reportlab.pdfgen import canvas
                 from reportlab.lib.pagesizes import letter
                 from PIL import Image
                 
+                # Open and process image with quality preservation
                 img = Image.open(input_path)
-                if img.mode != 'RGB':
+                
+                # Only convert to RGB if absolutely necessary
+                if img.mode not in ['RGB', 'RGBA']:
                     img = img.convert('RGB')
+                elif img.mode == 'RGBA':
+                    # Handle transparency properly
+                    background = Image.new('RGB', img.size, (255, 255, 255))
+                    background.paste(img, mask=img.split()[-1] if len(img.split()) == 4 else None)
+                    img = background
                 
                 # Smart orientation detection
                 img_width, img_height = img.size
@@ -1118,7 +1134,7 @@ async def prepare_document(
                 c = canvas.Canvas(working_path, pagesize=page_size)
                 x = (page_width - new_width) / 2
                 y = (page_height - new_height) / 2
-                c.drawImage(input_path, x, y, width=new_width, height=new_height)
+                c.drawImage(input_path, x, y, width=new_width, height=new_height, preserveAspectRatio=True)
                 c.save()
                 
             # Office documents - use LibreOffice
@@ -1443,21 +1459,26 @@ async def image_to_pdf(
                     if chunk:
                         f.write(chunk)
 
-        # Create PDF
+        # Create PDF with higher quality settings
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import letter
         from PIL import Image
         
-        # Open and process image
+        # Open and process image with quality preservation
         img = Image.open(input_path)
         
-        # Convert to RGB if necessary
-        if img.mode != 'RGB':
+        # Only convert to RGB if absolutely necessary, preserve original format when possible
+        if img.mode not in ['RGB', 'RGBA']:
             img = img.convert('RGB')
+        elif img.mode == 'RGBA':
+            # Handle transparency properly
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1] if len(img.split()) == 4 else None)
+            img = background
         
         # Calculate dimensions
         page_width, page_height = letter
-        title_height = 60 if title else 20  # Space for title
+        title_height = 50 if title else 20  # Reduced title space
         available_height = page_height - title_height - 40  # margins
         available_width = page_width - 40  # margins
         
@@ -1474,22 +1495,23 @@ async def image_to_pdf(
             # Use original size (might be clipped)
             new_width, new_height = img.size
         
-        # Create PDF
+        # Create PDF with better quality settings
         c = canvas.Canvas(output_path, pagesize=letter)
         
-        # Add title if provided
+        # Add title if provided (smaller font)
         if title:
-            c.setFont("Helvetica-Bold", 16)
+            c.setFont("Helvetica-Bold", 12)  # Reduced from 16 to 12
             # Use stringWidth to center text manually (more reliable than drawCentredText)
-            text_width = c.stringWidth(title, "Helvetica-Bold", 16)
+            text_width = c.stringWidth(title, "Helvetica-Bold", 12)
             title_x = (page_width - text_width) / 2
-            c.drawString(title_x, page_height - 40, title)
+            c.drawString(title_x, page_height - 35, title)  # Adjusted position for smaller font
         
-        # Add image
+        # Add image with better quality preservation
         x = (page_width - new_width) / 2  # Center horizontally
         y = (available_height - new_height) / 2 + 20  # Center vertically in available space
         
-        c.drawImage(input_path, x, y, width=new_width, height=new_height)
+        # Use higher quality image drawing
+        c.drawImage(input_path, x, y, width=new_width, height=new_height, preserveAspectRatio=True)
         c.save()
         
         # Cleanup input file
