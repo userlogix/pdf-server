@@ -1393,6 +1393,7 @@ async def image_to_pdf(
     request: Request,
     file: UploadFile = File(None),
     file_url: str = Form(None),
+    filename: str = Form(None, description="Optional: Custom filename for the output (without extension)"),
     title: str = Form(None, description="Optional title to add at top of page"),
     fit_to_letter: bool = Form(False, description="Resize image to fit letter size (8.5x11)"),
     return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
@@ -1491,7 +1492,10 @@ async def image_to_pdf(
             os.remove(input_path)
         raise HTTPException(status_code=500, detail=f"Image to PDF error: {str(e)}")
 
-    return return_file_response(output_path, return_type, "image_document.pdf")
+    # Use custom filename if provided, otherwise default
+    output_filename = f"{filename}.pdf" if filename else "image_document.pdf"
+    
+    return return_file_response(output_path, return_type, output_filename)
 
 @app.post("/add-page-numbers", tags=["PDF Enhancement"])
 async def add_page_numbers(
