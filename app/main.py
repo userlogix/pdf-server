@@ -7,6 +7,8 @@ import uuid, os, shutil, base64, zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from app.utils import compress_pdf, download_pdf, generate_temp_url, validate_api_key
+import asyncio
+import logging
 
 # Branded, clean FastAPI Swagger
 app = FastAPI(
@@ -19,6 +21,75 @@ TEMP_DIR = "/tmp/pdfcache"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 app.mount("/temp", StaticFiles(directory=TEMP_DIR), name="temp")
+
+# Cleanup configuration
+CLEANUP_MODE = os.environ.get("CLEANUP_MODE", "lazy").lower()  # "lazy" or "active"
+CLEANUP_INTERVAL_MINUTES = int(os.environ.get("CLEANUP_INTERVAL_MINUTES", "30"))
+FILE_EXPIRATION_MINUTES = int(os.environ.get("FILE_EXPIRATION_MINUTES", "60"))
+
+# Global variable to track active cleanup task
+cleanup_task = None
+
+def cleanup_expired_files():
+    """Remove files older than FILE_EXPIRATION_MINUTES"""
+    try:
+        folder = Path(TEMP_DIR)
+        cutoff_time = datetime.now().timestamp() - (FILE_EXPIRATION_MINUTES * 60)
+        deleted_count = 0
+        
+        for file_path in folder.glob("*"):
+            try:
+                if file_path.is_file() and file_path.stat().st_mtime < cutoff_time:
+                    file_path.unlink()
+                    deleted_count += 1
+            except Exception as e:
+                logging.warning(f"Failed to delete {file_path}: {str(e)}")
+        
+        if deleted_count > 0:
+            logging.info(f"Cleanup: Deleted {deleted_count} expired files")
+            
+        return deleted_count
+    except Exception as e:
+        logging.error(f"Cleanup error: {str(e)}")
+        return 0
+
+async def active_cleanup_loop():
+    """Background cleanup loop for active mode"""
+    while True:
+        try:
+            await asyncio.sleep(CLEANUP_INTERVAL_MINUTES * 60)  # Convert to seconds
+            cleanup_expired_files()
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logging.error(f"Active cleanup loop error: {str(e)}")
+
+def lazy_cleanup():
+    """Run cleanup on-demand for lazy mode"""
+    if CLEANUP_MODE == "lazy":
+        cleanup_expired_files()
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize cleanup based on mode"""
+    global cleanup_task
+    
+    if CLEANUP_MODE == "active":
+        cleanup_task = asyncio.create_task(active_cleanup_loop())
+        logging.info(f"Active cleanup started: Every {CLEANUP_INTERVAL_MINUTES} minutes, deleting files older than {FILE_EXPIRATION_MINUTES} minutes")
+    else:
+        logging.info(f"Lazy cleanup enabled: Files older than {FILE_EXPIRATION_MINUTES} minutes deleted on each request")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop active cleanup task"""
+    global cleanup_task
+    if cleanup_task:
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
 
 class CompressionLevel(str, Enum):
     screen = "screen"
@@ -92,6 +163,9 @@ async def compress(
 ):
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
 
     if not file and not file_url:
         raise HTTPException(status_code=400, detail="Send file or file_url")
@@ -130,6 +204,9 @@ async def trim_pdf(
 ):
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
 
     if not file and not file_url:
         raise HTTPException(status_code=400, detail="Send file or file_url")
@@ -1269,3 +1346,48 @@ def cache_status(request: Request):
         "total_size_kb": round(sum(f["size_kb"] for f in files), 2),
         "files": sorted(files, key=lambda x: x['age_minutes'], reverse=True)
     }
+
+@app.post("/cleanup/run")
+async def manual_cleanup(request: Request):
+    """Manually trigger the cleanup process"""
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+    
+    # Run cleanup
+    deleted_count = cleanup_expired_files()
+    
+    # Get updated file count
+    folder = Path(TEMP_DIR)
+    remaining_files = len(list(folder.glob("*")))
+    
+    return {
+        "message": "Manual cleanup completed",
+        "deleted_files": deleted_count,
+        "remaining_files": remaining_files,
+        "cleanup_mode": CLEANUP_MODE,
+        "file_expiration_minutes": FILE_EXPIRATION_MINUTES
+    }
+
+@app.get("/cleanup/status")
+def cleanup_status(request: Request):
+    """Get cleanup configuration and status"""
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+    
+    folder = Path(TEMP_DIR)
+    file_count = len(list(folder.glob("*")))
+    
+    status = {
+        "cleanup_mode": CLEANUP_MODE,
+        "file_expiration_minutes": FILE_EXPIRATION_MINUTES,
+        "current_file_count": file_count
+    }
+    
+    if CLEANUP_MODE == "active":
+        global cleanup_task
+        status["active_cleanup_running"] = cleanup_task is not None and not cleanup_task.done()
+        status["cleanup_interval_minutes"] = CLEANUP_INTERVAL_MINUTES
+    else:
+        status["lazy_cleanup_info"] = "Cleanup runs on each API request"
+    
+    return status
