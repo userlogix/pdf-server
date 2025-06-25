@@ -983,6 +983,7 @@ async def prepare_document(
     request: Request,
     file: UploadFile = File(None),
     file_url: str = Form(None),
+    filename: str = Form(None, description="Optional: Custom filename for the output (without extension)"),
     force_password_removal: bool = Form(True, description="Attempt password removal without knowing password"),
     target_compression: CompressionLevel = Form(CompressionLevel.ebook, description="Target compression level"),
     max_file_size_mb: float = Form(8.0, description="Target maximum file size in MB"),
@@ -1016,6 +1017,8 @@ async def prepare_document(
     try:
         # Step 1: Download/save and detect file type
         processing_log.append("Starting document preparation")
+        if filename:
+            processing_log.append(f"Output filename will be: {filename}.pdf")
         
         if file:
             filename = file.filename or "document"
@@ -1288,6 +1291,9 @@ async def prepare_document(
         final_size_mb = final_size / 1024 / 1024
         size_reduction = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
 
+        # Use custom filename if provided, otherwise default
+        output_filename = f"{filename}.pdf" if filename else "prepared_document.pdf"
+
         base_response = {
             "original_size_mb": round(original_size / 1024 / 1024, 2),
             "final_size_mb": round(final_size_mb, 2),
@@ -1298,13 +1304,14 @@ async def prepare_document(
         }
 
         if return_type == "binary":
-            return FileResponse(output_path, media_type="application/pdf", filename="prepared_document.pdf")
+            return FileResponse(output_path, media_type="application/pdf", filename=output_filename)
         
         elif return_type == "url":
             url, expires = generate_temp_url(output_path)
             return {
                 "url": url,
                 "expires_at": expires.isoformat(),
+                "filename": output_filename,
                 **base_response
             }
         
@@ -1312,7 +1319,7 @@ async def prepare_document(
             with open(output_path, "rb") as f:
                 content = base64.b64encode(f.read()).decode()
             return {
-                "filename": "prepared_document.pdf",
+                "filename": output_filename,
                 "content_type": "application/pdf",
                 "content_base64": content,
                 **base_response
