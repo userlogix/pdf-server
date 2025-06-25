@@ -604,6 +604,7 @@ async def convert_to_pdf(
     request: Request,
     file: UploadFile = File(None),
     file_url: str = Form(None),
+    filename: str = Form(None, description="Optional: Custom filename for the output (without extension)"),
     title: str = Form(None, description="Optional title for image conversions"),
     fit_to_letter: bool = Form(False, description="For images: resize to fit letter size"),
     return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
@@ -701,7 +702,10 @@ async def convert_to_pdf(
             
             if title:
                 c.setFont("Helvetica-Bold", 16)
-                c.drawCentredText(page_width / 2, page_height - 40, title)
+                # Use stringWidth to center text manually
+                text_width = c.stringWidth(title, "Helvetica-Bold", 16)
+                title_x = (page_width - text_width) / 2
+                c.drawString(title_x, page_height - 40, title)
             
             x = (page_width - new_width) / 2
             y = (available_height - new_height) / 2 + 20
@@ -759,7 +763,10 @@ async def convert_to_pdf(
         else:
             raise HTTPException(status_code=500, detail=f"Conversion error: {str(e)}")
 
-    return return_file_response(output_path, return_type, "converted.pdf")
+    # Use custom filename if provided, otherwise default
+    output_filename = f"{filename}.pdf" if filename else "converted.pdf"
+    
+    return return_file_response(output_path, return_type, output_filename)
 
 @app.post("/make-searchable", tags=["Text & OCR"])
 async def make_pdf_searchable(
@@ -1473,7 +1480,10 @@ async def image_to_pdf(
         # Add title if provided
         if title:
             c.setFont("Helvetica-Bold", 16)
-            c.drawCentredText(page_width / 2, page_height - 40, title)
+            # Use stringWidth to center text manually (more reliable than drawCentredText)
+            text_width = c.stringWidth(title, "Helvetica-Bold", 16)
+            title_x = (page_width - text_width) / 2
+            c.drawString(title_x, page_height - 40, title)
         
         # Add image
         x = (page_width - new_width) / 2  # Center horizontally
@@ -1559,7 +1569,12 @@ async def add_page_numbers(
             else:
                 x, y = letter[0] / 2, 30  # default to center
             
-            c.drawCentredText(x, y, str(page_num))
+            # Draw page number (center text manually for reliability)
+            page_text = str(page_num)
+            if position == "bottom-center":  # For centered positions
+                text_width = c.stringWidth(page_text, "Helvetica", 10)
+                x = x - (text_width / 2)
+            c.drawString(x, y, page_text)
             c.save()
             
             # Apply page number overlay
