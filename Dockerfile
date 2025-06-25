@@ -4,6 +4,10 @@ RUN apt-get update && apt-get install -y \
     ghostscript \
     tesseract-ocr \
     poppler-utils \
+    libreoffice \
+    wkhtmltopdf \
+    file \
+    libmagic1 \
     curl \
     build-essential \
     && rm -rf /var/lib/apt/lists/*

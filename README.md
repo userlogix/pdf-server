@@ -238,6 +238,65 @@ curl -X POST "https://your-app.com/merge-with-bookmarks" \
   -F "return_type=binary"
 ```
 
+### 🔄 Universal Converter
+**POST** `/convert-to-pdf`
+
+Auto-detect file type and convert to PDF. Supports Word, Excel, PowerPoint, images, text files, and more.
+
+**Parameters:**
+- `file` / `file_url`: Input file (any supported format)
+- `title` (string, optional): Title for image conversions
+- `fit_to_letter` (bool): For images - resize to fit letter size
+- `return_type`: Output format
+
+**Supported Formats:**
+- **Office:** .docx, .doc, .xlsx, .xls, .pptx, .ppt
+- **OpenOffice:** .odt, .ods, .odp
+- **Images:** .jpg, .png, .gif, .bmp, .tiff
+- **Text:** .txt, .rtf
+- **Already PDF:** .pdf (passthrough)
+
+**Example:**
+```bash
+# Convert Word document
+curl -X POST "https://your-app.com/convert-to-pdf" \
+  -H "x-api-key: your-key" \
+  -F "file=@report.docx" \
+  -F "return_type=url"
+
+# Convert image with title
+curl -X POST "https://your-app.com/convert-to-pdf" \
+  -H "x-api-key: your-key" \
+  -F "file_url=https://example.com/chart.png" \
+  -F "title=Sales Chart" \
+  -F "fit_to_letter=true" \
+  -F "return_type=binary"
+```
+
+### 🔍 Make PDF Searchable
+**POST** `/make-searchable`
+
+Add invisible OCR text layer to image-based PDFs, making them searchable while preserving appearance.
+
+**Parameters:**
+- `file` / `file_url`: Input PDF (usually scanned/image-based)
+- `language` (string): OCR language code (default: "eng")
+- `return_type`: Output format
+
+**Supported Languages:**
+- `eng` (English), `spa` (Spanish), `fra` (French), `deu` (German), `ita` (Italian), etc.
+
+**Example:**
+```bash
+curl -X POST "https://your-app.com/make-searchable" \
+  -H "x-api-key: your-key" \
+  -F "file=@scanned_document.pdf" \
+  -F "language=eng" \
+  -F "return_type=url"
+```
+
+**Note:** This creates a searchable PDF by adding an invisible text layer over the original images. Perfect for scanned documents!
+
 ### 🏷️ PDF Watermarking
 **POST** `/watermark`
 

@@ -485,6 +485,288 @@ async def password_remove(
 
     return return_file_response(output_path, return_type, "unlocked.pdf", input_path)
 
+async def convert_to_pdf(
+    request: Request,
+    file: UploadFile = File(None),
+    file_url: str = Form(None),
+    title: str = Form(None, description="Optional title for image conversions"),
+    fit_to_letter: bool = Form(False, description="For images: resize to fit letter size"),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+):
+    """Universal document to PDF converter - auto-detects file type"""
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Send file or file_url")
+
+    input_path = os.path.join(TEMP_DIR, f"convert_{uuid.uuid4()}")
+    output_path = os.path.join(TEMP_DIR, f"converted_{uuid.uuid4()}.pdf")
+
+    try:
+        # Save/download file
+        if file:
+            filename = file.filename or "document"
+            file_ext = filename.split(".")[-1].lower() if "." in filename else ""
+            input_path += f".{file_ext}" if file_ext else ""
+            
+            with open(input_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+        else:
+            # Download file
+            import requests
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(file_url, stream=True, headers=headers, timeout=60)
+            if r.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Failed to download file: {r.status_code}")
+            
+            # Try to determine extension from URL or content-type
+            url_ext = file_url.split(".")[-1].lower() if "." in file_url else ""
+            content_type = r.headers.get("Content-Type", "")
+            
+            if url_ext in ["pdf", "docx", "doc", "xlsx", "xls", "pptx", "ppt", "txt", "rtf", "odt", "jpg", "jpeg", "png"]:
+                input_path += f".{url_ext}"
+            elif "pdf" in content_type:
+                input_path += ".pdf"
+            elif "word" in content_type or "document" in content_type:
+                input_path += ".docx"
+            elif "excel" in content_type or "spreadsheet" in content_type:
+                input_path += ".xlsx"
+            elif "powerpoint" in content_type or "presentation" in content_type:
+                input_path += ".pptx"
+            elif "image" in content_type:
+                if "jpeg" in content_type:
+                    input_path += ".jpg"
+                elif "png" in content_type:
+                    input_path += ".png"
+                else:
+                    input_path += ".jpg"
+            
+            with open(input_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+        # Detect file type and convert
+        import magic
+        mime_type = magic.from_file(input_path, mime=True)
+        file_extension = input_path.split(".")[-1].lower() if "." in input_path else ""
+        
+        # Already PDF - just copy
+        if mime_type == "application/pdf" or file_extension == "pdf":
+            shutil.copy2(input_path, output_path)
+            
+        # Images - use existing image-to-pdf logic
+        elif mime_type.startswith("image/") or file_extension in ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]:
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+            from PIL import Image
+            
+            img = Image.open(input_path)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            page_width, page_height = letter
+            title_height = 60 if title else 20
+            available_height = page_height - title_height - 40
+            available_width = page_width - 40
+            
+            if fit_to_letter:
+                img_width, img_height = img.size
+                scale_w = available_width / img_width
+                scale_h = available_height / img_height
+                scale = min(scale_w, scale_h)
+                new_width = img_width * scale
+                new_height = img_height * scale
+            else:
+                new_width, new_height = img.size
+            
+            c = canvas.Canvas(output_path, pagesize=letter)
+            
+            if title:
+                c.setFont("Helvetica-Bold", 16)
+                c.drawCentredText(page_width / 2, page_height - 40, title)
+            
+            x = (page_width - new_width) / 2
+            y = (available_height - new_height) / 2 + 20
+            c.drawImage(input_path, x, y, width=new_width, height=new_height)
+            c.save()
+            
+        # Office documents and others - use LibreOffice
+        elif (mime_type in [
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # docx
+            "application/msword",  # doc
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # xlsx
+            "application/vnd.ms-excel",  # xls
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",  # pptx
+            "application/vnd.ms-powerpoint",  # ppt
+            "application/vnd.oasis.opendocument.text",  # odt
+            "application/rtf",  # rtf
+            "text/plain"  # txt
+        ] or file_extension in ["docx", "doc", "xlsx", "xls", "pptx", "ppt", "odt", "rtf", "txt"]):
+            
+            # Use LibreOffice to convert
+            import subprocess
+            
+            # Create temp directory for LibreOffice output
+            temp_dir = os.path.dirname(input_path)
+            
+            result = subprocess.run([
+                "libreoffice", "--headless", "--convert-to", "pdf",
+                "--outdir", temp_dir, input_path
+            ], capture_output=True, text=True, timeout=120)
+            
+            if result.returncode != 0:
+                raise HTTPException(status_code=500, detail=f"LibreOffice conversion failed: {result.stderr}")
+            
+            # Find the converted PDF
+            base_name = os.path.splitext(os.path.basename(input_path))[0]
+            converted_pdf = os.path.join(temp_dir, f"{base_name}.pdf")
+            
+            if not os.path.exists(converted_pdf):
+                raise HTTPException(status_code=500, detail="Conversion completed but PDF not found")
+            
+            shutil.move(converted_pdf, output_path)
+            
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: {mime_type}")
+        
+        # Cleanup input file
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+    except Exception as e:
+        # Cleanup on error
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        if "subprocess" in str(e) or "LibreOffice" in str(e):
+            raise HTTPException(status_code=500, detail=f"Document conversion error: {str(e)}")
+        else:
+            raise HTTPException(status_code=500, detail=f"Conversion error: {str(e)}")
+
+    return return_file_response(output_path, return_type, "converted.pdf")
+
+@app.post("/make-searchable")
+async def make_pdf_searchable(
+    request: Request,
+    file: UploadFile = File(None),
+    file_url: str = Form(None),
+    language: str = Form("eng", description="OCR language (eng, spa, fra, deu, etc.)"),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+):
+    """Convert image-based PDF to searchable PDF by adding invisible OCR text layer"""
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Send file or file_url")
+
+    input_path = os.path.join(TEMP_DIR, f"in_{uuid.uuid4()}.pdf")
+    output_path = input_path.replace("in_", "searchable_")
+
+    # Save file or download
+    if file:
+        with open(input_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    else:
+        download_pdf(file_url, input_path)
+
+    try:
+        from PyPDF2 import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.colors import Color
+        import pytesseract
+        from PIL import Image
+        import pdf2image
+        from io import BytesIO
+        
+        reader = PdfReader(input_path)
+        writer = PdfWriter()
+        
+        for page_num, original_page in enumerate(reader.pages, 1):
+            # Convert PDF page to image for OCR
+            try:
+                images = pdf2image.convert_from_path(
+                    input_path, 
+                    first_page=page_num, 
+                    last_page=page_num,
+                    dpi=300  # Higher DPI for better OCR
+                )
+                
+                if not images:
+                    # No image found, just add original page
+                    writer.add_page(original_page)
+                    continue
+                
+                image = images[0]
+                
+                # Run OCR with position data
+                ocr_data = pytesseract.image_to_data(
+                    image, 
+                    lang=language,
+                    output_type=pytesseract.Output.DICT
+                )
+                
+                # Create invisible text overlay
+                packet = BytesIO()
+                page_width = float(original_page.mediabox.width)
+                page_height = float(original_page.mediabox.height)
+                
+                c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+                
+                # Add invisible text at OCR coordinates
+                image_width, image_height = image.size
+                
+                for i in range(len(ocr_data['text'])):
+                    text = ocr_data['text'][i].strip()
+                    if text and int(ocr_data['conf'][i]) > 30:  # Only use confident OCR results
+                        # Convert image coordinates to PDF coordinates
+                        x = float(ocr_data['left'][i]) * page_width / image_width
+                        y = page_height - (float(ocr_data['top'][i]) * page_height / image_height)
+                        width = float(ocr_data['width'][i]) * page_width / image_width
+                        height = float(ocr_data['height'][i]) * page_height / image_height
+                        
+                        # Make text invisible (white text on white background)
+                        c.setFillColor(Color(1, 1, 1, alpha=0))  # Transparent
+                        c.setFont("Helvetica", max(8, height * 0.8))  # Size based on OCR box height
+                        
+                        # Draw invisible text
+                        c.drawString(x, y - height, text)
+                
+                c.save()
+                
+                # Merge invisible text layer with original page
+                packet.seek(0)
+                text_overlay = PdfReader(packet)
+                
+                if text_overlay.pages:
+                    original_page.merge_page(text_overlay.pages[0])
+                
+                writer.add_page(original_page)
+                
+            except Exception as ocr_error:
+                # OCR failed for this page, just add original
+                print(f"OCR failed for page {page_num}: {str(ocr_error)}")
+                writer.add_page(original_page)
+                continue
+        
+        # Write the searchable PDF
+        with open(output_path, "wb") as f:
+            writer.write(f)
+        
+        # Cleanup input file
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+    except Exception as e:
+        # Cleanup on error
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        raise HTTPException(status_code=500, detail=f"Searchable PDF creation error: {str(e)}")
+
+    return return_file_response(output_path, return_type, "searchable.pdf")
+
 @app.delete("/delete")
 async def delete_files(
     request: Request,

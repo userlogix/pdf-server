@@ -7,3 +7,4 @@ reportlab
 pytesseract
 Pillow
 pdf2image
+python-magic
