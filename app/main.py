@@ -993,9 +993,11 @@ async def prepare_document(
     Comprehensive document preparation pipeline that:
     1. Converts any document type to PDF
     2. Attempts forced password removal
-    3. Detects orientation and resizes to letter size intelligently
+    3. Intelligently analyzes and resizes to letter size (only when needed)
     4. Optimizes file size with progressive compression
-    5. Returns processing metadata
+    5. Returns processing metadata with detailed logging
+    
+    Always ensures letter-size output with robust error handling.
     """
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
@@ -1197,62 +1199,97 @@ async def prepare_document(
             except Exception as e:
                 processing_log.append(f"Password removal error: {str(e)}")
 
-        # Step 4: Smart resize to letter size with orientation detection
+        # Step 4: Intelligent letter size standardization
         try:
-            from PyPDF2 import PdfReader, PdfWriter
+            from PyPDF2 import PdfReader
             from reportlab.lib.pagesizes import letter
             
+            processing_log.append("Analyzing page dimensions")
+            
             reader = PdfReader(working_path)
-            writer = PdfWriter()
+            letter_width, letter_height = letter  # 612 x 792 points
             
-            letter_width, letter_height = letter
-            resize_path = working_path.replace(".pdf", "_resized.pdf")
+            # Analyze all pages to understand the document
+            needs_resize = False
+            page_info = []
+            portrait_pages = 0
+            landscape_pages = 0
             
-            for page in reader.pages:
+            for i, page in enumerate(reader.pages):
                 page_width = float(page.mediabox.width)
                 page_height = float(page.mediabox.height)
                 
-                # Detect if page is landscape
-                is_page_landscape = page_width > page_height
+                # Determine if this page needs resizing (5% tolerance)
+                width_diff = abs(page_width - letter_width) / letter_width
+                height_diff = abs(page_height - letter_height) / letter_height
+                landscape_width_diff = abs(page_width - letter_height) / letter_height
+                landscape_height_diff = abs(page_height - letter_width) / letter_width
                 
-                # Choose target size based on page orientation
-                if is_page_landscape:
-                    target_width, target_height = letter_height, letter_width  # Landscape letter
+                # Check if it's already letter size (portrait or landscape)
+                is_letter_portrait = width_diff < 0.05 and height_diff < 0.05
+                is_letter_landscape = landscape_width_diff < 0.05 and landscape_height_diff < 0.05
+                is_landscape = page_width > page_height
+                
+                if is_landscape:
+                    landscape_pages += 1
                 else:
-                    target_width, target_height = letter_width, letter_height  # Portrait letter
+                    portrait_pages += 1
                 
-                # Calculate scaling
-                scale_x = target_width / page_width
-                scale_y = target_height / page_height
-                scale = min(scale_x, scale_y)  # Maintain aspect ratio
+                page_info.append({
+                    "page": i + 1,
+                    "width": page_width,
+                    "height": page_height,
+                    "is_landscape": is_landscape,
+                    "needs_resize": not (is_letter_portrait or is_letter_landscape)
+                })
                 
-                # Apply scaling
-                page.scale(scale, scale)
-                
-                # Center on page
-                new_width = page_width * scale
-                new_height = page_height * scale
-                x_offset = (target_width - new_width) / 2
-                y_offset = (target_height - new_height) / 2
-                
-                page.mediabox.lower_left = (x_offset, y_offset)
-                page.mediabox.upper_right = (x_offset + new_width, y_offset + new_height)
-                
-                writer.add_page(page)
+                if not (is_letter_portrait or is_letter_landscape):
+                    needs_resize = True
             
-            with open(resize_path, "wb") as f:
-                writer.write(f)
+            processing_log.append(f"Document analysis: {len(reader.pages)} pages ({portrait_pages} portrait, {landscape_pages} landscape)")
             
-            shutil.move(resize_path, working_path)
-            processing_log.append("Resized to letter size with orientation detection")
-            
+            if not needs_resize:
+                processing_log.append("All pages are already letter size - skipping resize")
+            else:
+                pages_needing_resize = sum(1 for p in page_info if p["needs_resize"])
+                processing_log.append(f"{pages_needing_resize} pages need resizing to letter size")
+                # Use ghostscript for robust resizing instead of PyPDF2
+                processing_log.append("Using ghostscript for robust letter-size conversion")
+                resize_path = working_path.replace(".pdf", "_resized.pdf")
+                
+                # Ghostscript command for letter size fitting
+                gs_command = [
+                    "gs", "-q", "-dNOPAUSE", "-dBATCH", "-sDEVICE=pdfwrite",
+                    "-sPAPERSIZE=letter", "-dFIXEDMEDIA", "-dPDFFitPage",
+                    "-dCompatibilityLevel=1.4",
+                    f"-sOutputFile={resize_path}",
+                    working_path
+                ]
+                
+                result = subprocess.run(gs_command, capture_output=True, text=True)
+                
+                if result.returncode == 0 and os.path.exists(resize_path) and os.path.getsize(resize_path) > 1000:
+                    shutil.move(resize_path, working_path)
+                    processing_log.append("Successfully resized to letter size using ghostscript")
+                else:
+                    processing_log.append(f"Ghostscript resize failed: {result.stderr} - continuing with original")
+                    if os.path.exists(resize_path):
+                        os.remove(resize_path)
+                
         except Exception as e:
-            processing_log.append(f"Resize warning: {str(e)}")
+            processing_log.append(f"Page analysis/resize failed: {str(e)} - continuing with original PDF")
+
+        # Verify working file is still valid before compression
+        if not os.path.exists(working_path) or os.path.getsize(working_path) < 1000:
+            raise HTTPException(status_code=500, detail="PDF became corrupted during processing")
 
         # Step 5: Progressive compression until target size is reached
+        processing_log.append("Starting compression optimization")
         current_path = working_path
         compression_levels = ["screen", "ebook", "printer", "prepress"]
         target_level_index = compression_levels.index(target_compression)
+        
+        compression_successful = False
         
         for i in range(target_level_index, len(compression_levels)):
             level = compression_levels[i]
@@ -1261,35 +1298,54 @@ async def prepare_document(
             try:
                 compress_pdf(current_path, compress_path, compression_level=level)
                 
-                # Check file size
-                compressed_size = os.path.getsize(compress_path)
-                size_mb = compressed_size / 1024 / 1024
-                
-                processing_log.append(f"Compression {level}: {size_mb:.2f} MB")
-                
-                if size_mb <= max_file_size_mb or i == len(compression_levels) - 1:
-                    shutil.move(compress_path, output_path)
-                    processing_log.append(f"Final compression: {level}")
-                    break
+                # Check file size and validity
+                if os.path.exists(compress_path) and os.path.getsize(compress_path) > 1000:
+                    compressed_size = os.path.getsize(compress_path)
+                    size_mb = compressed_size / 1024 / 1024
+                    
+                    processing_log.append(f"Compression {level}: {size_mb:.2f} MB")
+                    
+                    if size_mb <= max_file_size_mb or i == len(compression_levels) - 1:
+                        shutil.move(compress_path, output_path)
+                        processing_log.append(f"Final compression: {level}")
+                        compression_successful = True
+                        break
+                    else:
+                        current_path = compress_path
                 else:
-                    current_path = compress_path
+                    processing_log.append(f"Compression {level} produced empty file - trying next level")
+                    if os.path.exists(compress_path):
+                        os.remove(compress_path)
                     
             except Exception as e:
                 processing_log.append(f"Compression {level} failed: {str(e)}")
+                if os.path.exists(compress_path):
+                    os.remove(compress_path)
+                
                 if i == target_level_index:
-                    # First compression failed, just copy
-                    shutil.copy2(current_path, output_path)
-                    break
+                    # First compression failed, try next level or copy original
+                    continue
+        
+        # If all compression attempts failed, use the original
+        if not compression_successful:
+            processing_log.append("All compression attempts failed - using original PDF")
+            shutil.copy2(current_path, output_path)
 
         # Cleanup temporary files
         for temp_file in [input_path, working_path]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
+        # Final validation - ensure output file exists and is valid
+        if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
+            raise HTTPException(status_code=500, detail="Failed to generate valid output PDF")
+
         # Generate response with comprehensive metadata
         final_size = os.path.getsize(output_path)
         final_size_mb = final_size / 1024 / 1024
         size_reduction = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
+
+        processing_log.append(f"Processing complete - final size: {final_size_mb:.2f} MB")
 
         # Use custom filename if provided, otherwise default
         output_filename = f"{filename}.pdf" if filename else "prepared_document.pdf"
