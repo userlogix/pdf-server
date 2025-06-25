@@ -14,7 +14,33 @@ import logging
 app = FastAPI(
     title="Zeal PDF Utility",
     description="Comprehensive PDF toolkit: compress, trim, merge, split, watermark, password protect and more.",
-    version="2.0.0"
+    version="2.0.0",
+    openapi_tags=[
+        {
+            "name": "Core PDF Operations",
+            "description": "Essential PDF manipulation: compress, trim, merge, split"
+        },
+        {
+            "name": "Document Conversion", 
+            "description": "Convert any document type to PDF"
+        },
+        {
+            "name": "PDF Enhancement",
+            "description": "Add features to existing PDFs: watermarks, passwords, page numbers"
+        },
+        {
+            "name": "Text & OCR",
+            "description": "Extract text and make PDFs searchable"
+        },
+        {
+            "name": "Advanced Operations",
+            "description": "Complex workflows and bulk operations"
+        },
+        {
+            "name": "Cache Management",
+            "description": "Monitor and manage temporary files"
+        }
+    ]
 )
 
 TEMP_DIR = "/tmp/pdfcache"
@@ -152,7 +178,7 @@ def return_file_response(output_path, return_type, filename="processed.pdf", inp
     
     raise HTTPException(status_code=400, detail="Invalid return_type")
 
-@app.post("/compress")
+@app.post("/compress", tags=["Core PDF Operations"])
 async def compress(
     request: Request,
     file: UploadFile = File(None),
@@ -193,7 +219,7 @@ async def compress(
     compress_pdf(input_path, output_path, compression_level=compression_level)
     return return_file_response(output_path, return_type, "compressed.pdf", input_path)
 
-@app.post("/trim")
+@app.post("/trim", tags=["Core PDF Operations"])
 async def trim_pdf(
     request: Request,
     file: UploadFile = File(None),
@@ -246,7 +272,7 @@ async def trim_pdf(
 
     return return_file_response(output_path, return_type, "trimmed.pdf", input_path)
 
-@app.post("/merge")
+@app.post("/merge", tags=["Core PDF Operations"])
 async def merge_pdfs(
     request: Request,
     files: List[UploadFile] = File(None),
@@ -255,6 +281,9 @@ async def merge_pdfs(
 ):
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
 
     urls = []
     if file_urls:
@@ -307,7 +336,7 @@ async def merge_pdfs(
 
     return return_file_response(output_path, return_type, "merged.pdf")
 
-@app.post("/split")
+@app.post("/split", tags=["Core PDF Operations"])
 async def split_pdf(
     request: Request,
     file: UploadFile = File(None),
@@ -317,6 +346,9 @@ async def split_pdf(
 ):
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
 
     if not file and not file_url:
         raise HTTPException(status_code=400, detail="Send file or file_url")
@@ -411,6 +443,9 @@ async def add_watermark(
 ):
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
 
     if not file and not file_url:
         raise HTTPException(status_code=400, detail="Send file or file_url")
@@ -573,6 +608,9 @@ async def convert_to_pdf(
     """Universal document to PDF converter - auto-detects file type"""
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
 
     if not file and not file_url:
         raise HTTPException(status_code=400, detail="Send file or file_url")
@@ -723,7 +761,7 @@ async def convert_to_pdf(
 
     return return_file_response(output_path, return_type, "converted.pdf")
 
-@app.post("/make-searchable")
+@app.post("/make-searchable", tags=["Text & OCR"])
 async def make_pdf_searchable(
     request: Request,
     file: UploadFile = File(None),
@@ -734,6 +772,9 @@ async def make_pdf_searchable(
     """Convert image-based PDF to searchable PDF by adding invisible OCR text layer"""
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
 
     if not file and not file_url:
         raise HTTPException(status_code=400, detail="Send file or file_url")
@@ -844,7 +885,98 @@ async def make_pdf_searchable(
 
     return return_file_response(output_path, return_type, "searchable.pdf")
 
-@app.delete("/delete")
+@app.post("/merge-with-bookmarks", tags=["Advanced Operations"], 
+         summary="Merge PDFs with automatic bookmark creation",
+         description="Merge multiple PDFs and create navigation bookmarks for each document. Perfect for creating organized document packages.")
+async def merge_with_bookmarks(
+    request: Request,
+    files: List[UploadFile] = File(None),
+    file_urls: str = Form(None, description="Comma-separated URLs"),
+    titles: str = Form(..., description="Comma-separated bookmark titles (must match file order)"),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+):
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+    
+    # Lazy cleanup on each request
+    lazy_cleanup()
+
+    # Parse titles
+    title_list = [t.strip() for t in titles.split(",") if t.strip()]
+    
+    # Parse URLs if provided
+    urls = []
+    if file_urls:
+        urls = [url.strip() for url in file_urls.split(",") if url.strip()]
+    
+    if not files and not urls:
+        raise HTTPException(status_code=400, detail="Send files or file_urls")
+    
+    if not files:
+        files = []
+    
+    # Validate that we have the same number of titles as files
+    total_files = len(files) + len(urls)
+    if len(title_list) != total_files:
+        raise HTTPException(status_code=400, detail=f"Number of titles ({len(title_list)}) must match number of files ({total_files})")
+
+    output_path = os.path.join(TEMP_DIR, f"bookmarked_{uuid.uuid4()}.pdf")
+    input_paths = []
+
+    try:
+        from PyPDF2 import PdfWriter, PdfReader
+        writer = PdfWriter()
+        current_page = 0
+        
+        # Process uploaded files
+        for i, file in enumerate(files):
+            input_path = os.path.join(TEMP_DIR, f"bookmark_in_{uuid.uuid4()}.pdf")
+            input_paths.append(input_path)
+            with open(input_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            
+            reader = PdfReader(input_path)
+            
+            # Add bookmark at current page
+            writer.add_outline_item(title_list[i], current_page)
+            
+            # Add all pages from this file
+            for page in reader.pages:
+                writer.add_page(page)
+                current_page += 1
+
+        # Process URLs
+        url_start_index = len(files)
+        for i, url in enumerate(urls):
+            input_path = os.path.join(TEMP_DIR, f"bookmark_url_{uuid.uuid4()}.pdf")
+            input_paths.append(input_path)
+            download_pdf(url, input_path)
+            
+            reader = PdfReader(input_path)
+            title_index = url_start_index + i
+            
+            # Add bookmark at current page
+            writer.add_outline_item(title_list[title_index], current_page)
+            
+            # Add all pages from this file
+            for page in reader.pages:
+                writer.add_page(page)
+                current_page += 1
+
+        with open(output_path, "wb") as f:
+            writer.write(f)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bookmark merge error: {str(e)}")
+    finally:
+        # Cleanup input files
+        for path in input_paths:
+            if os.path.exists(path):
+                os.remove(path)
+
+    return return_file_response(output_path, return_type, "bookmarked.pdf")
+
+@app.delete("/delete", tags=["Cache Management"])
 async def delete_files(
     request: Request,
     filenames: str = Form(..., description="Comma-separated list of filenames to delete")
@@ -873,7 +1005,7 @@ async def delete_files(
         "total_deleted": len(deleted)
     }
 
-@app.delete("/clear-cache")
+@app.delete("/clear-cache", tags=["Cache Management"])
 async def clear_cache(
     request: Request,
     older_than_minutes: Optional[int] = Form(None, description="Only delete files older than X minutes")
@@ -1322,7 +1454,7 @@ async def merge_with_bookmarks(
 # Cache status endpoint
 from datetime import timezone
 
-@app.get("/cache/status")
+@app.get("/cache/status", tags=["Cache Management"])
 def cache_status(request: Request):
     api_key = request.headers.get("x-api-key")
     validate_api_key(api_key)
@@ -1347,7 +1479,7 @@ def cache_status(request: Request):
         "files": sorted(files, key=lambda x: x['age_minutes'], reverse=True)
     }
 
-@app.post("/cleanup/run")
+@app.post("/cleanup/run", tags=["Cache Management"])
 async def manual_cleanup(request: Request):
     """Manually trigger the cleanup process"""
     api_key = request.headers.get("x-api-key")
@@ -1368,7 +1500,7 @@ async def manual_cleanup(request: Request):
         "file_expiration_minutes": FILE_EXPIRATION_MINUTES
     }
 
-@app.get("/cleanup/status")
+@app.get("/cleanup/status", tags=["Cache Management"])
 def cleanup_status(request: Request):
     """Get cleanup configuration and status"""
     api_key = request.headers.get("x-api-key")
