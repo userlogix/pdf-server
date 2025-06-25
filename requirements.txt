@@ -4,3 +4,6 @@ python-multipart
 requests
 PyPDF2
 reportlab
+pytesseract
+Pillow
+pdf2image

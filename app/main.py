@@ -547,6 +547,419 @@ async def clear_cache(
         "filter": f"Files older than {older_than_minutes} minutes" if older_than_minutes else "All files"
     }
 
+@app.post("/image-to-pdf")
+async def image_to_pdf(
+    request: Request,
+    file: UploadFile = File(None),
+    file_url: str = Form(None),
+    title: str = Form(None, description="Optional title to add at top of page"),
+    fit_to_letter: bool = Form(False, description="Resize image to fit letter size (8.5x11)"),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+):
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Send file or file_url")
+
+    input_path = os.path.join(TEMP_DIR, f"img_{uuid.uuid4()}")
+    output_path = os.path.join(TEMP_DIR, f"out_{uuid.uuid4()}.pdf")
+
+    try:
+        # Save image file
+        if file:
+            file_ext = file.filename.split(".")[-1].lower() if file.filename else "jpg"
+            input_path += f".{file_ext}"
+            with open(input_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+        else:
+            # Download image
+            import requests
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(file_url, stream=True, headers=headers, timeout=60)
+            if r.status_code != 200:
+                raise HTTPException(status_code=400, detail=f"Failed to download image: {r.status_code}")
+            
+            # Determine file extension
+            content_type = r.headers.get("Content-Type", "")
+            if "jpeg" in content_type or "jpg" in content_type:
+                file_ext = "jpg"
+            elif "png" in content_type:
+                file_ext = "png"
+            else:
+                file_ext = "jpg"  # default
+            
+            input_path += f".{file_ext}"
+            with open(input_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+
+        # Create PDF
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        from PIL import Image
+        
+        # Open and process image
+        img = Image.open(input_path)
+        
+        # Convert to RGB if necessary
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        # Calculate dimensions
+        page_width, page_height = letter
+        title_height = 60 if title else 20  # Space for title
+        available_height = page_height - title_height - 40  # margins
+        available_width = page_width - 40  # margins
+        
+        if fit_to_letter:
+            # Calculate scaling to fit within available space
+            img_width, img_height = img.size
+            scale_w = available_width / img_width
+            scale_h = available_height / img_height
+            scale = min(scale_w, scale_h)  # Use smaller scale to maintain aspect ratio
+            
+            new_width = img_width * scale
+            new_height = img_height * scale
+        else:
+            # Use original size (might be clipped)
+            new_width, new_height = img.size
+        
+        # Create PDF
+        c = canvas.Canvas(output_path, pagesize=letter)
+        
+        # Add title if provided
+        if title:
+            c.setFont("Helvetica-Bold", 16)
+            c.drawCentredText(page_width / 2, page_height - 40, title)
+        
+        # Add image
+        x = (page_width - new_width) / 2  # Center horizontally
+        y = (available_height - new_height) / 2 + 20  # Center vertically in available space
+        
+        c.drawImage(input_path, x, y, width=new_width, height=new_height)
+        c.save()
+        
+        # Cleanup input file
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+    except Exception as e:
+        # Cleanup on error
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        raise HTTPException(status_code=500, detail=f"Image to PDF error: {str(e)}")
+
+    return return_file_response(output_path, return_type, "image_document.pdf")
+
+@app.post("/add-page-numbers")
+async def add_page_numbers(
+    request: Request,
+    file: UploadFile = File(None),
+    file_url: str = Form(None),
+    start_page: int = Form(1, description="Page number to start with"),
+    skip_first: bool = Form(False, description="Skip numbering the first page"),
+    position: str = Form("bottom-center", description="Position: bottom-left, bottom-center, bottom-right"),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+):
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Send file or file_url")
+
+    input_path = os.path.join(TEMP_DIR, f"in_{uuid.uuid4()}.pdf")
+    output_path = input_path.replace("in_", "out_")
+
+    # Save file or download
+    if file:
+        with open(input_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    else:
+        download_pdf(file_url, input_path)
+
+    try:
+        from PyPDF2 import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        from io import BytesIO
+        
+        reader = PdfReader(input_path)
+        writer = PdfWriter()
+        
+        for i, page in enumerate(reader.pages):
+            # Skip numbering first page if requested
+            if skip_first and i == 0:
+                writer.add_page(page)
+                continue
+            
+            # Calculate page number
+            if skip_first:
+                page_num = start_page + i - 1
+            else:
+                page_num = start_page + i
+            
+            # Create page number overlay
+            packet = BytesIO()
+            c = canvas.Canvas(packet, pagesize=letter)
+            c.setFont("Helvetica", 10)
+            
+            # Position page number
+            if position == "bottom-left":
+                x, y = 50, 30
+            elif position == "bottom-center":
+                x, y = letter[0] / 2, 30
+            elif position == "bottom-right":
+                x, y = letter[0] - 50, 30
+            else:
+                x, y = letter[0] / 2, 30  # default to center
+            
+            c.drawCentredText(x, y, str(page_num))
+            c.save()
+            
+            # Apply page number overlay
+            packet.seek(0)
+            number_page = PdfReader(packet)
+            page.merge_page(number_page.pages[0])
+            writer.add_page(page)
+        
+        with open(output_path, "wb") as f:
+            writer.write(f)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Page numbering error: {str(e)}")
+
+    return return_file_response(output_path, return_type, "numbered.pdf", input_path)
+
+@app.post("/resize-to-letter")
+async def resize_to_letter(
+    request: Request,
+    file: UploadFile = File(None),
+    file_url: str = Form(None),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+):
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Send file or file_url")
+
+    input_path = os.path.join(TEMP_DIR, f"in_{uuid.uuid4()}.pdf")
+    output_path = input_path.replace("in_", "out_")
+
+    # Save file or download
+    if file:
+        with open(input_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    else:
+        download_pdf(file_url, input_path)
+
+    try:
+        from PyPDF2 import PdfReader, PdfWriter
+        from reportlab.lib.pagesizes import letter
+        
+        reader = PdfReader(input_path)
+        writer = PdfWriter()
+        
+        letter_width, letter_height = letter
+        
+        for page in reader.pages:
+            # Get current page dimensions
+            page_width = float(page.mediabox.width)
+            page_height = float(page.mediabox.height)
+            
+            # Calculate scaling factors
+            scale_x = letter_width / page_width
+            scale_y = letter_height / page_height
+            scale = min(scale_x, scale_y)  # Maintain aspect ratio
+            
+            # Scale the page
+            page.scale(scale, scale)
+            
+            # Center the page on letter size
+            new_width = page_width * scale
+            new_height = page_height * scale
+            x_offset = (letter_width - new_width) / 2
+            y_offset = (letter_height - new_height) / 2
+            
+            # Set new mediabox to letter size
+            page.mediabox.lower_left = (x_offset, y_offset)
+            page.mediabox.upper_right = (x_offset + new_width, y_offset + new_height)
+            
+            writer.add_page(page)
+        
+        with open(output_path, "wb") as f:
+            writer.write(f)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Resize error: {str(e)}")
+
+    return return_file_response(output_path, return_type, "letter_size.pdf", input_path)
+
+@app.post("/extract-text")
+async def extract_text(
+    request: Request,
+    file: UploadFile = File(None),
+    file_url: str = Form(None),
+    ocr_images: bool = Form(True, description="Use OCR to extract text from images in PDF")
+):
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+
+    if not file and not file_url:
+        raise HTTPException(status_code=400, detail="Send file or file_url")
+
+    input_path = os.path.join(TEMP_DIR, f"in_{uuid.uuid4()}.pdf")
+
+    # Save file or download
+    if file:
+        with open(input_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    else:
+        download_pdf(file_url, input_path)
+
+    try:
+        from PyPDF2 import PdfReader
+        import pytesseract
+        from PIL import Image
+        import pdf2image
+        
+        reader = PdfReader(input_path)
+        extracted_text = []
+        
+        for page_num, page in enumerate(reader.pages, 1):
+            page_text = ""
+            
+            # Try to extract text directly from PDF
+            try:
+                direct_text = page.extract_text()
+                if direct_text.strip():
+                    page_text = direct_text
+            except:
+                pass
+            
+            # If no text found and OCR is enabled, try OCR
+            if not page_text.strip() and ocr_images:
+                try:
+                    # Convert PDF page to image
+                    images = pdf2image.convert_from_path(input_path, first_page=page_num, last_page=page_num)
+                    if images:
+                        # OCR the image
+                        ocr_text = pytesseract.image_to_string(images[0])
+                        if ocr_text.strip():
+                            page_text = ocr_text
+                except Exception as ocr_error:
+                    # OCR failed, but don't error out
+                    page_text = f"[OCR failed for page {page_num}: {str(ocr_error)}]"
+            
+            extracted_text.append({
+                "page": page_num,
+                "text": page_text.strip() if page_text else "[No text found]"
+            })
+        
+        # Cleanup
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        
+        return {
+            "total_pages": len(extracted_text),
+            "pages": extracted_text,
+            "full_text": "\n\n".join([f"=== Page {p['page']} ===\n{p['text']}" for p in extracted_text])
+        }
+
+    except Exception as e:
+        # Cleanup on error
+        if os.path.exists(input_path):
+            os.remove(input_path)
+        raise HTTPException(status_code=500, detail=f"Text extraction error: {str(e)}")
+
+@app.post("/merge-with-bookmarks")
+async def merge_with_bookmarks(
+    request: Request,
+    files: List[UploadFile] = File(None),
+    file_urls: str = Form(None, description="Comma-separated URLs"),
+    titles: str = Form(..., description="Comma-separated bookmark titles (must match order of files)"),
+    return_type: str = Form("base64", description="Choose how the output is returned: base64, binary, or url")
+):
+    api_key = request.headers.get("x-api-key")
+    validate_api_key(api_key)
+
+    # Parse titles
+    title_list = [t.strip() for t in titles.split(",") if t.strip()]
+    
+    # Parse URLs if provided
+    urls = []
+    if file_urls:
+        urls = [url.strip() for url in file_urls.split(",") if url.strip()]
+    
+    if not files and not urls:
+        raise HTTPException(status_code=400, detail="Send files or file_urls")
+    
+    if not files:
+        files = []
+    
+    # Validate that we have the same number of titles as files
+    total_files = len(files) + len(urls)
+    if len(title_list) != total_files:
+        raise HTTPException(status_code=400, detail=f"Number of titles ({len(title_list)}) must match number of files ({total_files})")
+
+    output_path = os.path.join(TEMP_DIR, f"bookmarked_{uuid.uuid4()}.pdf")
+    input_paths = []
+
+    try:
+        from PyPDF2 import PdfWriter, PdfReader
+        writer = PdfWriter()
+        current_page = 0
+        
+        # Process uploaded files
+        for i, file in enumerate(files):
+            input_path = os.path.join(TEMP_DIR, f"bookmark_in_{uuid.uuid4()}.pdf")
+            input_paths.append(input_path)
+            with open(input_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+            
+            reader = PdfReader(input_path)
+            
+            # Add bookmark at current page
+            writer.add_outline_item(title_list[i], current_page)
+            
+            # Add all pages from this file
+            for page in reader.pages:
+                writer.add_page(page)
+                current_page += 1
+
+        # Process URLs
+        url_start_index = len(files)
+        for i, url in enumerate(urls):
+            input_path = os.path.join(TEMP_DIR, f"bookmark_url_{uuid.uuid4()}.pdf")
+            input_paths.append(input_path)
+            download_pdf(url, input_path)
+            
+            reader = PdfReader(input_path)
+            title_index = url_start_index + i
+            
+            # Add bookmark at current page
+            writer.add_outline_item(title_list[title_index], current_page)
+            
+            # Add all pages from this file
+            for page in reader.pages:
+                writer.add_page(page)
+                current_page += 1
+
+        with open(output_path, "wb") as f:
+            writer.write(f)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bookmark merge error: {str(e)}")
+    finally:
+        # Cleanup input files
+        for path in input_paths:
+            if os.path.exists(path):
+                os.remove(path)
+
+    return return_file_response(output_path, return_type, "bookmarked.pdf")
+
 # Cache status endpoint
 from datetime import timezone
 

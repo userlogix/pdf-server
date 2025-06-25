@@ -120,6 +120,124 @@ curl -X POST "https://your-app.com/split" \
   -F "return_type=base64"
 ```
 
+### 🖼️ Image to PDF
+**POST** `/image-to-pdf`
+
+Convert images to PDF with optional formatting.
+
+**Parameters:**
+- `file` / `file_url`: Input image (JPEG, PNG, etc.)
+- `title` (string, optional): Title to display at top of page
+- `fit_to_letter` (bool): Resize image to fit letter size (default: false)
+- `return_type`: Output format
+
+**Example:**
+```bash
+curl -X POST "https://your-app.com/image-to-pdf" \
+  -H "x-api-key: your-key" \
+  -F "file=@photo.jpg" \
+  -F "title=Monthly Report" \
+  -F "fit_to_letter=true" \
+  -F "return_type=url"
+```
+
+### 🔢 Add Page Numbers
+**POST** `/add-page-numbers`
+
+Add page numbers to existing PDF.
+
+**Parameters:**
+- `file` / `file_url`: Input PDF
+- `start_page` (int): Starting page number (default: 1)
+- `skip_first` (bool): Skip numbering first page (default: false)
+- `position` (string): `bottom-left`, `bottom-center`, `bottom-right`
+- `return_type`: Output format
+
+**Example:**
+```bash
+curl -X POST "https://your-app.com/add-page-numbers" \
+  -H "x-api-key: your-key" \
+  -F "file=@document.pdf" \
+  -F "start_page=2" \
+  -F "skip_first=true" \
+  -F "position=bottom-center" \
+  -F "return_type=binary"
+```
+
+### 📏 Resize to Letter
+**POST** `/resize-to-letter`
+
+Resize any PDF to standard letter size (8.5x11).
+
+**Parameters:**
+- `file` / `file_url`: Input PDF
+- `return_type`: Output format
+
+**Example:**
+```bash
+curl -X POST "https://your-app.com/resize-to-letter" \
+  -H "x-api-key: your-key" \
+  -F "file_url=https://example.com/oversized.pdf" \
+  -F "return_type=url"
+```
+
+### 🔍 Extract Text (OCR)
+**POST** `/extract-text`
+
+Extract text from PDF using OCR for image-based content.
+
+**Parameters:**
+- `file` / `file_url`: Input PDF
+- `ocr_images` (bool): Use OCR for image-based pages (default: true)
+
+**Example:**
+```bash
+curl -X POST "https://your-app.com/extract-text" \
+  -H "x-api-key: your-key" \
+  -F "file=@scanned.pdf" \
+  -F "ocr_images=true"
+```
+
+**Response:**
+```json
+{
+  "total_pages": 3,
+  "pages": [
+    {"page": 1, "text": "Extracted text from page 1..."},
+    {"page": 2, "text": "Extracted text from page 2..."}
+  ],
+  "full_text": "=== Page 1 ===\nExtracted text..."
+}
+```
+
+### 🔖 Merge with Bookmarks
+**POST** `/merge-with-bookmarks`
+
+Merge PDFs and create bookmarks for each document.
+
+**Parameters:**
+- `files` (array, optional): Multiple file uploads
+- `file_urls` (string, optional): Comma-separated URLs
+- `titles` (string): Comma-separated bookmark titles (must match file order)
+- `return_type`: Output format
+
+**Example:**
+```bash
+curl -X POST "https://your-app.com/merge-with-bookmarks" \
+  -H "x-api-key: your-key" \
+  -F "files=@chapter1.pdf" \
+  -F "files=@chapter2.pdf" \
+  -F "titles=Introduction,Main Content" \
+  -F "return_type=url"
+
+# Or with URLs:
+curl -X POST "https://your-app.com/merge-with-bookmarks" \
+  -H "x-api-key: your-key" \
+  -F "file_urls=https://example.com/doc1.pdf,https://example.com/doc2.pdf" \
+  -F "titles=Chapter 1,Chapter 2" \
+  -F "return_type=binary"
+```
+
 ### 🏷️ PDF Watermarking
 **POST** `/watermark`
 
