@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Toolkit - Teams App</title>
-    <script src="https://unpkg.com/@microsoft/teams-js@2.0.0/dist/MicrosoftTeams.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -35,30 +34,6 @@
         .header h1 {
             color: #464775;
             margin-bottom: 10px;
-        }
-
-        .loading, .unauthorized {
-            text-align: center;
-            padding: 50px;
-            background: white;
-            border-radius: 8px;
-            margin: 50px auto;
-            max-width: 500px;
-        }
-
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #464775;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
         }
 
         .operations-grid {
@@ -143,14 +118,6 @@
         .btn:disabled {
             background: #d2d0ce;
             cursor: not-allowed;
-        }
-
-        .btn-secondary {
-            background: #0078d4;
-        }
-
-        .btn-secondary:hover {
-            background: #106ebe;
         }
 
         .progress {
@@ -247,970 +214,331 @@
         .url-input .form-control {
             flex: 1;
         }
-
-        .debug-context {
-            text-align: left;
-            font-family: monospace;
-            font-size: 11px;
-            max-height: 400px;
-            overflow-y: auto;
-            background: #f5f5f5;
-            padding: 15px;
-            border-radius: 4px;
-            margin: 15px 0;
-            border: 1px solid #d2d0ce;
-        }
     </style>
 </head>
 <body>
-    <!-- Loading State -->
-    <div id="loading" class="loading">
-        <h3>Authenticating...</h3>
-        <div class="spinner"></div>
-        <p>Verifying your access to PDF Toolkit</p>
-    </div>
+    <div class="container">
+        <div class="header">
+            <h1>🔧 PDF Toolkit</h1>
+            <p>✅ Authenticated via Teams - Processing PDFs made simple</p>
+        </div>
 
-    <!-- Unauthorized State -->
-    <div id="unauthorized" class="unauthorized" style="display:none;">
-        <h3>⚠️ Access Denied</h3>
-        <p>This PDF Toolkit is only available to authorized team members.</p>
-        <p style="margin-top: 10px; color: #666;">Please contact your administrator if you believe this is an error.</p>
-    </div>
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('basic')">Core PDF Operations</div>
+            <div class="tab" onclick="switchTab('conversion')">Document Conversion</div>
+            <div class="tab" onclick="switchTab('enhancement')">PDF Enhancement</div>
+        </div>
 
-    <!-- Main App -->
-    <div id="pdf-app" style="display:none;">
-        <div class="container">
-            <div class="header">
-                <h1>🔧 PDF Toolkit</h1>
-                <p id="user-info">Processing PDFs made simple</p>
-            </div>
-
-            <!-- Navigation Tabs -->
-            <div class="tabs">
-                <div class="tab active" onclick="switchTab('basic')">Core PDF Operations</div>
-                <div class="tab" onclick="switchTab('conversion')">Document Conversion</div>
-                <div class="tab" onclick="switchTab('enhancement')">PDF Enhancement</div>
-            </div>
-
-            <!-- Core PDF Operations Tab -->
-            <div id="basic-tab" class="tab-content active">
-                <div class="operations-grid">
-                    <!-- Compress PDF -->
-                    <div class="operation-card">
-                        <h3>🗜️ Compress PDF</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('compress-file').click()" 
-                                 ondrop="handleFileDrop(event, 'compress-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="compress-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'compress')">
-                                <p>📁 Drop PDF here or click to select</p>
-                                <span id="compress-filename"></span>
-                            </div>
+        <!-- Core PDF Operations Tab -->
+        <div id="basic-tab" class="tab-content active">
+            <div class="operations-grid">
+                <!-- Compress PDF -->
+                <div class="operation-card">
+                    <h3>🗜️ Compress PDF</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('compress-file').click()" 
+                             ondrop="handleFileDrop(event, 'compress-file')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="compress-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'compress')">
+                            <p>📁 Drop PDF here or click to select</p>
+                            <span id="compress-filename"></span>
                         </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter PDF URL:</label>
-                                <input type="url" id="compress-url" class="form-control" placeholder="https://example.com/document.pdf">
-                            </div>
+                    </div>
+                    <div class="url-input">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Or enter PDF URL:</label>
+                            <input type="url" id="compress-url" class="form-control" placeholder="https://example.com/document.pdf">
                         </div>
-                        <div class="form-group">
-                            <label>Compression Level:</label>
-                            <select id="compress-level" class="form-control">
-                                <option value="screen">Screen (Lowest quality, smallest size)</option>
-                                <option value="ebook" selected>eBook (Good quality, moderate size)</option>
-                                <option value="printer">Printer (High quality, larger size)</option>
-                                <option value="prepress">Prepress (Highest quality, largest size)</option>
+                    </div>
+                    <div class="form-group">
+                        <label>Compression Level:</label>
+                        <select id="compress-level" class="form-control">
+                            <option value="screen">Screen (Lowest quality, smallest size)</option>
+                            <option value="ebook" selected>eBook (Good quality, moderate size)</option>
+                            <option value="printer">Printer (High quality, larger size)</option>
+                            <option value="prepress">Prepress (Highest quality, largest size)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Max Pages (optional):</label>
+                        <input type="number" id="compress-max-pages" class="form-control" placeholder="Leave empty for all pages">
+                    </div>
+                    <button class="btn" onclick="compressPDF()">Compress PDF</button>
+                    <div id="compress-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="compress-result"></div>
+                </div>
+
+                <!-- Merge PDFs -->
+                <div class="operation-card">
+                    <h3>🔗 Merge PDFs</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('merge-files').click()" 
+                             ondrop="handleFileDrop(event, 'merge-files')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="merge-files" accept=".pdf" multiple style="display:none" onchange="updateFileName(this, 'merge')">
+                            <p>📁 Drop multiple PDFs here or click to select</p>
+                            <span id="merge-filename"></span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Or enter PDF URLs (comma-separated):</label>
+                        <textarea id="merge-urls" class="form-control" rows="3" placeholder="https://example.com/doc1.pdf, https://example.com/doc2.pdf"></textarea>
+                    </div>
+                    <button class="btn" onclick="mergePDFs()">Merge PDFs</button>
+                    <div id="merge-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="merge-result"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PDF Enhancement Tab -->
+        <div id="enhancement-tab" class="tab-content">
+            <div class="operations-grid">
+                <!-- Add Watermark -->
+                <div class="operation-card">
+                    <h3>🏷️ Add Watermark</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('watermark-file').click()" 
+                             ondrop="handleFileDrop(event, 'watermark-file')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="watermark-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'watermark')">
+                            <p>📁 Drop PDF here or click to select</p>
+                            <span id="watermark-filename"></span>
+                        </div>
+                    </div>
+                    <div class="url-input">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Or enter PDF URL:</label>
+                            <input type="url" id="watermark-url" class="form-control" placeholder="https://example.com/document.pdf">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Watermark Text:</label>
+                        <input type="text" id="watermark-text" class="form-control" placeholder="CONFIDENTIAL" value="CONFIDENTIAL">
+                    </div>
+                    <div style="display: flex; gap: 15px;">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Opacity (0.0 - 1.0):</label>
+                            <input type="number" id="watermark-opacity" class="form-control" min="0" max="1" step="0.1" value="0.3">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>Position:</label>
+                            <select id="watermark-position" class="form-control">
+                                <option value="center" selected>Center</option>
+                                <option value="top_left">Top Left</option>
+                                <option value="top_right">Top Right</option>
+                                <option value="bottom_left">Bottom Left</option>
+                                <option value="bottom_right">Bottom Right</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label>Max Pages (optional):</label>
-                            <input type="number" id="compress-max-pages" class="form-control" placeholder="Leave empty for all pages">
-                        </div>
-                        <button class="btn" onclick="compressPDF()">Compress PDF</button>
-                        <div id="compress-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="compress-result"></div>
                     </div>
+                    <button class="btn" onclick="addWatermark()">Add Watermark</button>
+                    <div id="watermark-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="watermark-result"></div>
+                </div>
 
-                    <!-- Merge PDFs -->
-                    <div class="operation-card">
-                        <h3>🔗 Merge PDFs</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('merge-files').click()" 
-                                 ondrop="handleFileDrop(event, 'merge-files')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="merge-files" accept=".pdf" multiple style="display:none" onchange="updateFileName(this, 'merge')">
-                                <p>📁 Drop multiple PDFs here or click to select</p>
-                                <span id="merge-filename"></span>
-                            </div>
+                <!-- Password Protection -->
+                <div class="operation-card">
+                    <h3>🔒 Password Protect</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('protect-file').click()" 
+                             ondrop="handleFileDrop(event, 'protect-file')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="protect-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'protect')">
+                            <p>📁 Drop PDF here or click to select</p>
+                            <span id="protect-filename"></span>
                         </div>
-                        <div class="form-group">
-                            <label>Or enter PDF URLs (comma-separated):</label>
-                            <textarea id="merge-urls" class="form-control" rows="3" placeholder="https://example.com/doc1.pdf, https://example.com/doc2.pdf"></textarea>
-                        </div>
-                        <button class="btn" onclick="mergePDFs()">Merge PDFs</button>
-                        <div id="merge-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="merge-result"></div>
                     </div>
+                    <div class="url-input">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Or enter PDF URL:</label>
+                            <input type="url" id="protect-url" class="form-control" placeholder="https://example.com/document.pdf">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Password:</label>
+                        <input type="password" id="protect-password" class="form-control" placeholder="Enter password">
+                    </div>
+                    <button class="btn" onclick="passwordProtect()">Protect PDF</button>
+                    <div id="protect-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="protect-result"></div>
+                </div>
+
+                <!-- Remove Password -->
+                <div class="operation-card">
+                    <h3>🔓 Remove Password</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('unlock-file').click()" 
+                             ondrop="handleFileDrop(event, 'unlock-file')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="unlock-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'unlock')">
+                            <p>📁 Drop protected PDF here or click to select</p>
+                            <span id="unlock-filename"></span>
+                        </div>
+                    </div>
+                    <div class="url-input">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Or enter PDF URL:</label>
+                            <input type="url" id="unlock-url" class="form-control" placeholder="https://example.com/protected.pdf">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Current Password:</label>
+                        <input type="password" id="unlock-password" class="form-control" placeholder="Enter current password">
+                    </div>
+                    <button class="btn" onclick="passwordRemove()">Remove Password</button>
+                    <div id="unlock-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="unlock-result"></div>
                 </div>
             </div>
+        </div>
 
-            <!-- PDF Enhancement Tab -->
-            <div id="enhancement-tab" class="tab-content">
-                <div class="operations-grid">
-                    <!-- Add Watermark -->
-                    <div class="operation-card">
-                        <h3>🏷️ Add Watermark</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('watermark-file').click()" 
-                                 ondrop="handleFileDrop(event, 'watermark-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="watermark-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'watermark')">
-                                <p>📁 Drop PDF here or click to select</p>
-                                <span id="watermark-filename"></span>
-                            </div>
+        <!-- Document Conversion Tab -->
+        <div id="conversion-tab" class="tab-content">
+            <div class="operations-grid">
+                <!-- Universal Converter -->
+                <div class="operation-card">
+                    <h3>🔄 Convert to PDF</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('convert-file').click()" 
+                             ondrop="handleFileDrop(event, 'convert-file')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="convert-file" style="display:none" onchange="updateFileName(this, 'convert')" 
+                                   accept=".docx,.doc,.xlsx,.xls,.pptx,.ppt,.odt,.ods,.odp,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.txt,.rtf">
+                            <p>📁 Drop any document/image here or click to select</p>
+                            <small>Supports: Word, Excel, PowerPoint, Images, Text files</small>
+                            <span id="convert-filename"></span>
                         </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter PDF URL:</label>
-                                <input type="url" id="watermark-url" class="form-control" placeholder="https://example.com/document.pdf">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Watermark Text:</label>
-                            <input type="text" id="watermark-text" class="form-control" placeholder="CONFIDENTIAL" value="CONFIDENTIAL">
-                        </div>
-                        <div style="display: flex; gap: 15px;">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Opacity (0.0 - 1.0):</label>
-                                <input type="number" id="watermark-opacity" class="form-control" min="0" max="1" step="0.1" value="0.3">
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label>Position:</label>
-                                <select id="watermark-position" class="form-control">
-                                    <option value="center" selected>Center</option>
-                                    <option value="top_left">Top Left</option>
-                                    <option value="top_right">Top Right</option>
-                                    <option value="bottom_left">Bottom Left</option>
-                                    <option value="bottom_right">Bottom Right</option>
-                                </select>
-                            </div>
-                        </div>
-                        <button class="btn" onclick="addWatermark()">Add Watermark</button>
-                        <div id="watermark-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="watermark-result"></div>
                     </div>
+                    <div class="url-input">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Or enter file URL:</label>
+                            <input type="url" id="convert-url" class="form-control" placeholder="https://example.com/document.docx">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Title (for images):</label>
+                        <input type="text" id="convert-title" class="form-control" placeholder="Optional title for image conversions">
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <input type="checkbox" id="convert-fit-letter">
+                            <label>Fit images to letter size (8.5x11)</label>
+                        </div>
+                    </div>
+                    <button class="btn" onclick="convertToPDF()">Convert to PDF</button>
+                    <div id="convert-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="convert-result"></div>
+                </div>
 
-                    <!-- Password Protection -->
-                    <div class="operation-card">
-                        <h3>🔒 Password Protect</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('protect-file').click()" 
-                                 ondrop="handleFileDrop(event, 'protect-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="protect-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'protect')">
-                                <p>📁 Drop PDF here or click to select</p>
-                                <span id="protect-filename"></span>
-                            </div>
+                <!-- Image to PDF -->
+                <div class="operation-card">
+                    <h3>🖼️ Image to PDF</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('image-file').click()" 
+                             ondrop="handleFileDrop(event, 'image-file')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="image-file" accept="image/*" style="display:none" onchange="updateFileName(this, 'image')">
+                            <p>📁 Drop image here or click to select</p>
+                            <span id="image-filename"></span>
                         </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter PDF URL:</label>
-                                <input type="url" id="protect-url" class="form-control" placeholder="https://example.com/document.pdf">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Password:</label>
-                            <input type="password" id="protect-password" class="form-control" placeholder="Enter password">
-                        </div>
-                        <button class="btn" onclick="passwordProtect()">Protect PDF</button>
-                        <div id="protect-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="protect-result"></div>
                     </div>
+                    <div class="url-input">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Or enter image URL:</label>
+                            <input type="url" id="image-url" class="form-control" placeholder="https://example.com/image.jpg">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Title (optional):</label>
+                        <input type="text" id="image-title" class="form-control" placeholder="Document title">
+                    </div>
+                    <div class="form-group">
+                        <div class="checkbox">
+                            <input type="checkbox" id="image-fit-letter">
+                            <label>Fit to letter size (8.5x11)</label>
+                        </div>
+                    </div>
+                    <button class="btn" onclick="imageToPDF()">Convert to PDF</button>
+                    <div id="image-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="image-result"></div>
+                </div>
 
-                    <!-- Remove Password -->
-                    <div class="operation-card">
-                        <h3>🔓 Remove Password</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('unlock-file').click()" 
-                                 ondrop="handleFileDrop(event, 'unlock-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="unlock-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'unlock')">
-                                <p>📁 Drop protected PDF here or click to select</p>
-                                <span id="unlock-filename"></span>
-                            </div>
+                <!-- Make Searchable -->
+                <div class="operation-card">
+                    <h3>🔍 Make PDF Searchable</h3>
+                    <div class="form-group">
+                        <div class="file-upload" onclick="document.getElementById('searchable-file').click()" 
+                             ondrop="handleFileDrop(event, 'searchable-file')" 
+                             ondragover="event.preventDefault()" 
+                             ondragenter="event.target.classList.add('dragover')" 
+                             ondragleave="event.target.classList.remove('dragover')">
+                            <input type="file" id="searchable-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'searchable')">
+                            <p>📁 Drop scanned PDF here or click to select</p>
+                            <span id="searchable-filename"></span>
                         </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter PDF URL:</label>
-                                <input type="url" id="unlock-url" class="form-control" placeholder="https://example.com/protected.pdf">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Current Password:</label>
-                            <input type="password" id="unlock-password" class="form-control" placeholder="Enter current password">
-                        </div>
-                        <button class="btn" onclick="passwordRemove()">Remove Password</button>
-                        <div id="unlock-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="unlock-result"></div>
                     </div>
-
-                    <!-- Add Page Numbers -->
-                    <div class="operation-card">
-                        <h3>🔢 Add Page Numbers</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('pagenums-file').click()" 
-                                 ondrop="handleFileDrop(event, 'pagenums-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="pagenums-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'pagenums')">
-                                <p>📁 Drop PDF here or click to select</p>
-                                <span id="pagenums-filename"></span>
-                            </div>
+                    <div class="url-input">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Or enter PDF URL:</label>
+                            <input type="url" id="searchable-url" class="form-control" placeholder="https://example.com/scanned.pdf">
                         </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter PDF URL:</label>
-                                <input type="url" id="pagenums-url" class="form-control" placeholder="https://example.com/document.pdf">
-                            </div>
-                        </div>
-                        <div style="display: flex; gap: 15px;">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Start Number:</label>
-                                <input type="number" id="pagenums-start" class="form-control" value="1" min="1">
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label>Position:</label>
-                                <select id="pagenums-position" class="form-control">
-                                    <option value="bottom-center" selected>Bottom Center</option>
-                                    <option value="bottom-left">Bottom Left</option>
-                                    <option value="bottom-right">Bottom Right</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <div class="checkbox">
-                                <input type="checkbox" id="pagenums-skip-first">
-                                <label>Skip numbering first page</label>
-                            </div>
-                        </div>
-                        <button class="btn" onclick="addPageNumbers()">Add Page Numbers</button>
-                        <div id="pagenums-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="pagenums-result"></div>
                     </div>
-
-                    <!-- Resize to Letter -->
-                    <div class="operation-card">
-                        <h3>📏 Resize to Letter</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('resize-file').click()" 
-                                 ondrop="handleFileDrop(event, 'resize-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="resize-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'resize')">
-                                <p>📁 Drop PDF here or click to select</p>
-                                <span id="resize-filename"></span>
-                            </div>
-                        </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter PDF URL:</label>
-                                <input type="url" id="resize-url" class="form-control" placeholder="https://example.com/oversized.pdf">
-                            </div>
-                        </div>
-                        <p style="margin: 10px 0; color: #666; font-size: 14px;">
-                            Resizes any PDF to standard US Letter size (8.5" × 11") while maintaining aspect ratio.
-                        </p>
-                        <button class="btn" onclick="resizeToLetter()">Resize to Letter</button>
-                        <div id="resize-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="resize-result"></div>
+                    <div class="form-group">
+                        <label>OCR Language:</label>
+                        <select id="searchable-language" class="form-control">
+                            <option value="eng" selected>English</option>
+                            <option value="spa">Spanish</option>
+                            <option value="fra">French</option>
+                            <option value="deu">German</option>
+                            <option value="ita">Italian</option>
+                            <option value="por">Portuguese</option>
+                        </select>
                     </div>
+                    <button class="btn" onclick="makeSearchable()">Make Searchable</button>
+                    <div id="searchable-progress" class="progress" style="display:none;">
+                        <div class="progress-bar"></div>
+                    </div>
+                    <div id="searchable-result"></div>
                 </div>
             </div>
-
-            <!-- Document Conversion Tab -->
-            <div id="conversion-tab" class="tab-content">
-                <div class="operations-grid">
-                    <!-- Universal Converter -->
-                    <div class="operation-card">
-                        <h3>🔄 Convert to PDF</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('convert-file').click()" 
-                                 ondrop="handleFileDrop(event, 'convert-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="convert-file" style="display:none" onchange="updateFileName(this, 'convert')" 
-                                       accept=".docx,.doc,.xlsx,.xls,.pptx,.ppt,.odt,.ods,.odp,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.txt,.rtf">
-                                <p>📁 Drop any document/image here or click to select</p>
-                                <small>Supports: Word, Excel, PowerPoint, Images, Text files</small>
-                                <span id="convert-filename"></span>
-                            </div>
-                        </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter file URL:</label>
-                                <input type="url" id="convert-url" class="form-control" placeholder="https://example.com/document.docx">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Title (for images):</label>
-                            <input type="text" id="convert-title" class="form-control" placeholder="Optional title for image conversions">
-                        </div>
-                        <div class="form-group">
-                            <div class="checkbox">
-                                <input type="checkbox" id="convert-fit-letter">
-                                <label>Fit images to letter size (8.5x11)</label>
-                            </div>
-                        </div>
-                        <button class="btn" onclick="convertToPDF()">Convert to PDF</button>
-                        <div id="convert-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="convert-result"></div>
-                    </div>
-
-                    <!-- Image to PDF -->
-                    <div class="operation-card">
-                        <h3>🖼️ Image to PDF</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('image-file').click()" 
-                                 ondrop="handleFileDrop(event, 'image-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="image-file" accept="image/*" style="display:none" onchange="updateFileName(this, 'image')">
-                                <p>📁 Drop image here or click to select</p>
-                                <span id="image-filename"></span>
-                            </div>
-                        </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter image URL:</label>
-                                <input type="url" id="image-url" class="form-control" placeholder="https://example.com/image.jpg">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Title (optional):</label>
-                            <input type="text" id="image-title" class="form-control" placeholder="Document title">
-                        </div>
-                        <div class="form-group">
-                            <div class="checkbox">
-                                <input type="checkbox" id="image-fit-letter">
-                                <label>Fit to letter size (8.5x11)</label>
-                            </div>
-                        </div>
-                        <button class="btn" onclick="imageToPDF()">Convert to PDF</button>
-                        <div id="image-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="image-result"></div>
-                    </div>
-
-                    <!-- Make Searchable -->
-                    <div class="operation-card">
-                        <h3>🔍 Make PDF Searchable</h3>
-                        <div class="form-group">
-                            <div class="file-upload" onclick="document.getElementById('searchable-file').click()" 
-                                 ondrop="handleFileDrop(event, 'searchable-file')" 
-                                 ondragover="event.preventDefault()" 
-                                 ondragenter="event.target.classList.add('dragover')" 
-                                 ondragleave="event.target.classList.remove('dragover')">
-                                <input type="file" id="searchable-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'searchable')">
-                                <p>📁 Drop scanned PDF here or click to select</p>
-                                <span id="searchable-filename"></span>
-                            </div>
-                        </div>
-                        <div class="url-input">
-                            <div class="form-group" style="flex: 1;">
-                                <label>Or enter PDF URL:</label>
-                                <input type="url" id="searchable-url" class="form-control" placeholder="https://example.com/scanned.pdf">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>OCR Language:</label>
-                            <select id="searchable-language" class="form-control">
-                                <option value="eng" selected>English</option>
-                                <option value="spa">Spanish</option>
-                                <option value="fra">French</option>
-                                <option value="deu">German</option>
-                                <option value="ita">Italian</option>
-                                <option value="por">Portuguese</option>
-                            </select>
-                        </div>
-                        <button class="btn" onclick="makeSearchable()">Make Searchable</button>
-                        <div id="searchable-progress" class="progress" style="display:none;">
-                            <div class="progress-bar"></div>
-                        </div>
-                        <div id="searchable-result"></div>
-                    </div>
-                </div>
-            </div>
-
         </div>
     </div>
 
     <script>
-        // Configuration - Will be populated by server
         const CONFIG = {
             API_BASE_URL: '{{API_BASE_URL}}',
-            API_KEY: '{{API_KEY}}',
-            ALLOWED_TENANT_ID: '{{ALLOWED_TENANT_ID}}',
-            ALLOWED_DOMAIN: '{{ALLOWED_DOMAIN}}',
-            CLIENT_ID: '{{CLIENT_ID}}'
+            API_KEY: '{{API_KEY}}'
         };
-
-        // Debug logging that sends to server
-        function serverLog(message, data = null) {
-            console.log(message, data);
-            
-            fetch('/debug-log', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': CONFIG.API_KEY || 'missing-key'
-                },
-                body: JSON.stringify({
-                    message: message,
-                    data: data,
-                    timestamp: new Date().toISOString(),
-                    userAgent: navigator.userAgent,
-                    currentURL: window.location.href,
-                    isInTeams: !!(window.parent !== window)
-                })
-            }).catch(e => console.log('Failed to send server log:', e));
-        }
-
-        // DEBUG CONTEXT FUNCTIONS
-        function debugTeamsContext() {
-            serverLog('🔍 DEBUG: Checking all available Teams context');
-            
-            const contextInfo = {
-                'URL Parameters': Object.fromEntries(new URLSearchParams(window.location.search)),
-                'Window Name': window.name,
-                'Referrer': document.referrer,
-                'User Agent': navigator.userAgent,
-                'LocalStorage': getLocalStorageData(),
-                'SessionStorage': getSessionStorageData(),
-                'Cookies': document.cookie,
-                'Teams Parent': getTeamsParentInfo(),
-                'Window Location': {
-                    'href': window.location.href,
-                    'search': window.location.search,
-                    'hash': window.location.hash,
-                    'pathname': window.location.pathname
-                }
-            };
-            
-            serverLog('📋 COMPLETE TEAMS CONTEXT', contextInfo);
-            
-            // Show context on screen
-            document.getElementById('loading').innerHTML = `
-                <h3>🔍 Teams Context Debug</h3>
-                <div class="debug-context">
-                    <pre>${JSON.stringify(contextInfo, null, 2)}</pre>
-                </div>
-                <button onclick="proceedWithExtraction()" style="margin: 5px; padding: 8px 16px; background: #107c10; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    Use This Context
-                </button>
-                <button onclick="location.reload()" style="margin: 5px; padding: 8px 16px; background: #d13438; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    Retry
-                </button>
-            `;
-        }
-
-        function getLocalStorageData() {
-            try {
-                const data = {};
-                for (let i = 0; i < localStorage.length; i++) {
-                    const key = localStorage.key(i);
-                    data[key] = localStorage.getItem(key);
-                }
-                return data;
-            } catch (e) {
-                return 'LocalStorage not accessible';
-            }
-        }
-
-        function getSessionStorageData() {
-            try {
-                const data = {};
-                for (let i = 0; i < sessionStorage.length; i++) {
-                    const key = sessionStorage.key(i);
-                    data[key] = sessionStorage.getItem(key);
-                }
-                return data;
-            } catch (e) {
-                return 'SessionStorage not accessible';
-            }
-        }
-
-        function getTeamsParentInfo() {
-            try {
-                return {
-                    'Parent Window': window.parent !== window,
-                    'Frame Count': window.frames.length
-                };
-            } catch (e) {
-                return 'Teams parent info not accessible due to CORS';
-            }
-        }
-
-        // CONTEXT EXTRACTION LOGIC
-        function proceedWithExtraction() {
-            serverLog('🔧 Proceeding with context extraction');
-            
-            let userEmail = null;
-            
-            // Method 1: URL parameters
-            const urlParams = new URLSearchParams(window.location.search);
-            userEmail = urlParams.get('loginHint') || urlParams.get('upn') || urlParams.get('userPrincipalName');
-            
-            if (userEmail) {
-                serverLog('✅ Found user in URL parameters', { email: userEmail });
-                validateExtractedUser(userEmail);
-                return;
-            }
-            
-            // Method 2: Window name
-            if (window.name && window.name.includes('@')) {
-                try {
-                    const parsed = JSON.parse(window.name);
-                    userEmail = parsed.userPrincipalName || parsed.upn;
-                } catch (e) {
-                    if (window.name.includes('@')) {
-                        userEmail = window.name;
-                    }
-                }
-                
-                if (userEmail) {
-                    serverLog('✅ Found user in window name', { email: userEmail });
-                    validateExtractedUser(userEmail);
-                    return;
-                }
-            }
-            
-            // Method 3: Storage data
-            try {
-                const storageKeys = ['userPrincipalName', 'upn', 'loginHint', 'user', 'email'];
-                for (const key of storageKeys) {
-                    userEmail = localStorage.getItem(key) || sessionStorage.getItem(key);
-                    if (userEmail && userEmail.includes('@')) {
-                        serverLog('✅ Found user in storage', { key, email: userEmail });
-                        validateExtractedUser(userEmail);
-                        return;
-                    }
-                }
-            } catch (e) {
-                serverLog('❌ Storage extraction failed');
-            }
-            
-            // Method 4: PostMessage to Teams parent
-            serverLog('🔧 Requesting user context from Teams parent');
-            window.parent.postMessage({ type: 'getContext', action: 'getUserInfo' }, '*');
-            
-            // Listen for Teams response
-            window.addEventListener('message', function(event) {
-                if (event.data && (event.data.userPrincipalName || event.data.upn)) {
-                    const email = event.data.userPrincipalName || event.data.upn;
-                    serverLog('✅ Received user info from Teams parent', { email });
-                    validateExtractedUser(email);
-                }
-            });
-            
-            // Method 5: Fallback prompt after delay
-            setTimeout(() => {
-                if (document.getElementById('loading').style.display !== 'none') {
-                    userEmail = prompt("Enter your work email to access PDF Toolkit:");
-                    if (userEmail) {
-                        validateExtractedUser(userEmail);
-                    } else {
-                        showUnauthorized();
-                    }
-                }
-            }, 3000);
-        }
-
-        function validateExtractedUser(userEmail) {
-            serverLog('🔍 Validating extracted user', { email: userEmail });
-            
-            if (!userEmail || !userEmail.includes('@')) {
-                serverLog('❌ Invalid email format');
-                showUnauthorized();
-                return;
-            }
-            
-            // Domain validation
-            const allowedDomains = CONFIG.ALLOWED_DOMAIN.split(',').map(d => d.trim());
-            const isValidDomain = allowedDomains.some(domain => userEmail.endsWith(domain));
-            
-            if (!isValidDomain) {
-                serverLog('❌ Domain validation failed', { 
-                    email: userEmail, 
-                    allowedDomains: allowedDomains 
-                });
-                showUnauthorized();
-                return;
-            }
-            
-            // Create user object
-            const user = {
-                name: userEmail.split('@')[0],
-                upn: userEmail,
-                tid: CONFIG.ALLOWED_TENANT_ID
-            };
-            
-            serverLog('✅ User validation successful', user);
-            showPdfApp(user);
-        }
-
-        // TEAMS SDK INITIALIZATION WITH ENHANCED DEBUGGING
-        serverLog('🚀 Starting Teams app initialization');
-        serverLog('📋 CONFIG check', {
-            'API_BASE_URL': CONFIG.API_BASE_URL,
-            'API_KEY': CONFIG.API_KEY ? 'Set' : 'Missing',
-            'TENANT_ID': CONFIG.ALLOWED_TENANT_ID || 'Missing',
-            'DOMAIN': CONFIG.ALLOWED_DOMAIN || 'Missing',
-            'CLIENT_ID': CONFIG.CLIENT_ID || 'Missing'
-        });
-
-        serverLog('🌍 Environment check', {
-            'isInIframe': window.parent !== window,
-            'currentURL': window.location.href,
-            'referrer': document.referrer,
-            'hasTeamsSDK': typeof microsoftTeams !== 'undefined',
-            'userAgent': navigator.userAgent.substring(0, 100),
-            'protocol': window.location.protocol,
-            'host': window.location.host,
-            'pathname': window.location.pathname
-        });
-
-        // Add multiple timeouts to track each step
-        const initTimeout = setTimeout(() => {
-            serverLog('⏰ Initialize timeout after 5 seconds');
-        }, 5000);
-
-        const contextTimeout = setTimeout(() => {
-            serverLog('⏰ GetContext timeout after 10 seconds');
-        }, 10000);
-
-        const authTimeout = setTimeout(() => {
-            serverLog('⏰ GetAuthToken timeout after 15 seconds');
-            if (document.getElementById('loading').style.display !== 'none') {
-                document.getElementById('loading').innerHTML = `
-                    <h3>⏰ Teams SDK Timeout</h3>
-                    <p>Teams authentication failed. Debug the available context:</p>
-                    <button onclick="debugTeamsContext()" style="margin: 10px; padding: 8px 16px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        🔍 Show Teams Context
-                    </button>
-                    <button onclick="proceedWithExtraction()" style="margin: 10px; padding: 8px 16px; background: #107c10; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        ⚡ Try Context Extraction
-                    </button>
-                `;
-            }
-        }, 15000);
-
-        try {
-            serverLog('🔧 Step 1: Calling microsoftTeams.app.initialize()');
-            
-            microsoftTeams.app.initialize().then(() => {
-                clearTimeout(initTimeout);
-                serverLog('✅ Step 1 SUCCESS: Teams SDK initialized');
-                
-                serverLog('🔧 Step 2: Testing Teams environment');
-                
-                try {
-                    serverLog('🔧 Step 2a: Calling microsoftTeams.app.getContext()');
-                    
-                    const contextPromise = microsoftTeams.app.getContext().then(context => {
-                        clearTimeout(contextTimeout);
-                        serverLog('✅ Step 2 SUCCESS: Teams context received (Promise)', {
-                            'user': context.user?.userPrincipalName,
-                            'tenant': context.user?.tenant?.id,
-                            'app': context.app?.host?.name,
-                            'theme': context.app?.theme,
-                            'locale': context.app?.locale,
-                            'channel': context.channel?.displayName,
-                            'team': context.team?.displayName
-                        });
-                        
-                        if (context.user?.tenant?.id !== CONFIG.ALLOWED_TENANT_ID) {
-                            serverLog('❌ Tenant mismatch - STOPPING', {
-                                'expected': CONFIG.ALLOWED_TENANT_ID,
-                                'received': context.user?.tenant?.id
-                            });
-                            clearTimeout(authTimeout);
-                            showUnauthorized();
-                            return;
-                        }
-                        
-                        serverLog('🔧 Step 3: Tenant validated, calling getAuthToken()');
-                        proceedToAuthentication(context);
-                        
-                    }).catch(contextError => {
-                        clearTimeout(contextTimeout);
-                        clearTimeout(authTimeout);
-                        serverLog('❌ Step 2 FAILED: getContext() promise rejected', {
-                            'error': contextError.message,
-                            'name': contextError.name,
-                            'stack': contextError.stack,
-                            'fullError': JSON.stringify(contextError, null, 2)
-                        });
-                        showUnauthorized();
-                    });
-                    
-                    setTimeout(() => {
-                        try {
-                            serverLog('🔧 Step 2b: Trying callback approach for getContext()');
-                            microsoftTeams.getContext((context) => {
-                                if (context) {
-                                    serverLog('✅ Step 2 SUCCESS: Teams context received (Callback)', {
-                                        'hasContext': !!context,
-                                        'contextKeys': Object.keys(context || {})
-                                    });
-                                } else {
-                                    serverLog('❌ Step 2 FAILED: getContext() callback called but context is null');
-                                }
-                            });
-                        } catch (callbackError) {
-                            serverLog('❌ Step 2b FAILED: getContext() callback approach failed', {
-                                'error': callbackError.message
-                            });
-                        }
-                    }, 1000);
-                    
-                } catch (contextCallError) {
-                    clearTimeout(contextTimeout);
-                    clearTimeout(authTimeout);
-                    serverLog('❌ Step 2 FAILED: Cannot call getContext()', {
-                        'error': contextCallError.message,
-                        'stack': contextCallError.stack
-                    });
-                    showUnauthorized();
-                }
-                
-            }).catch(initError => {
-                clearTimeout(initTimeout);
-                clearTimeout(contextTimeout);
-                clearTimeout(authTimeout);
-                serverLog('❌ Step 1 FAILED: Teams SDK initialization failed', {
-                    'error': initError.message,
-                    'name': initError.name,
-                    'stack': initError.stack
-                });
-                showUnauthorized();
-            });
-            
-        } catch (outerError) {
-            clearTimeout(initTimeout);
-            clearTimeout(contextTimeout);
-            clearTimeout(authTimeout);
-            serverLog('❌ CRITICAL ERROR: Cannot initialize Teams SDK', {
-                'error': outerError.message,
-                'stack': outerError.stack,
-                'teamsObject': typeof microsoftTeams,
-                'hasApp': !!(microsoftTeams && microsoftTeams.app),
-                'hasInitialize': !!(microsoftTeams && microsoftTeams.app && microsoftTeams.app.initialize)
-            });
-            showUnauthorized();
-        }
-
-        function proceedToAuthentication(context) {
-            serverLog('🔧 Step 3: Starting authentication with context', {
-                'userEmail': context.user?.userPrincipalName,
-                'tenantId': context.user?.tenant?.id
-            });
-            
-            try {
-                serverLog('🔧 Step 3a: Calling microsoftTeams.authentication.getAuthToken()');
-                
-                const authRequest = {
-                    successCallback: (token) => {
-                        clearTimeout(authTimeout);
-                        serverLog('🎫 Step 3 SUCCESS: Auth token received', {
-                            'tokenLength': token?.length,
-                            'hasToken': !!token,
-                            'tokenPreview': token ? token.substring(0, 50) + '...' : 'empty',
-                            'tokenType': typeof token
-                        });
-                        
-                        if (!token || token.trim() === '') {
-                            serverLog('❌ Empty token - treating as failure');
-                            showUnauthorized();
-                            return;
-                        }
-                        
-                        validateUser(token);
-                    },
-                    failureCallback: (error) => {
-                        clearTimeout(authTimeout);
-                        serverLog('❌ Step 3 FAILED: getAuthToken() failed', {
-                            'error': error,
-                            'errorCode': error?.errorCode,
-                            'message': error?.message,
-                            'fullError': JSON.stringify(error, null, 2)
-                        });
-                        
-                        if (error?.message?.includes('resource defined in manifest')) {
-                            serverLog('💡 GUIDANCE: Manifest webApplicationInfo.resource mismatch with Azure AD');
-                        } else if (error?.message?.includes('consent')) {
-                            serverLog('💡 GUIDANCE: User consent required - check API permissions in Azure AD');
-                        } else if (error?.message?.includes('resourceDisabled')) {
-                            serverLog('💡 GUIDANCE: SSO disabled - check Azure AD app "Expose an API" configuration');
-                        }
-                        
-                        showUnauthorized();
-                    },
-                    resources: []
-                };
-                
-                microsoftTeams.authentication.getAuthToken(authRequest);
-                
-                if (microsoftTeams.authentication.getAuthToken.length === 0) {
-                    serverLog('🔧 Step 3b: Also trying promise-based getAuthToken()');
-                    microsoftTeams.authentication.getAuthToken()
-                        .then(token => {
-                            serverLog('🎫 Step 3b SUCCESS: Promise-based auth token', {
-                                'tokenLength': token?.length
-                            });
-                        })
-                        .catch(promiseError => {
-                            serverLog('❌ Step 3b FAILED: Promise-based getAuthToken failed', {
-                                'error': promiseError.message
-                            });
-                        });
-                }
-                
-            } catch (authError) {
-                clearTimeout(authTimeout);
-                serverLog('❌ Step 3 FAILED: Cannot call getAuthToken()', {
-                    'error': authError.message,
-                    'stack': authError.stack,
-                    'hasAuth': !!(microsoftTeams && microsoftTeams.authentication),
-                    'hasGetAuthToken': !!(microsoftTeams && microsoftTeams.authentication && microsoftTeams.authentication.getAuthToken)
-                });
-                showUnauthorized();
-            }
-        }
-
-        function validateUser(token) {
-            serverLog('🔧 Step 4: Starting user validation', {
-                'tokenLength': token?.length,
-                'tokenType': typeof token
-            });
-            
-            try {
-                const parts = token.split('.');
-                serverLog('🧩 Token parts analysis', {
-                    'partsCount': parts.length,
-                    'expectedParts': 3
-                });
-                
-                if (parts.length !== 3) {
-                    serverLog('❌ Invalid JWT format', {
-                        'expected': 3,
-                        'received': parts.length
-                    });
-                    showUnauthorized();
-                    return;
-                }
-                
-                const payload = JSON.parse(atob(parts[1]));
-                serverLog('📋 Decoded token payload', {
-                    'tid': payload.tid,
-                    'upn': payload.upn,
-                    'email': payload.email,
-                    'name': payload.name,
-                    'aud': payload.aud,
-                    'iss': payload.iss
-                });
-                
-                serverLog('🏢 Tenant validation', {
-                    'expected': CONFIG.ALLOWED_TENANT_ID,
-                    'received': payload.tid,
-                    'match': payload.tid === CONFIG.ALLOWED_TENANT_ID
-                });
-                
-                if (payload.tid !== CONFIG.ALLOWED_TENANT_ID) {
-                    serverLog('❌ Tenant ID mismatch - BLOCKING ACCESS');
-                    showUnauthorized();
-                    return;
-                }
-                serverLog('✅ Tenant ID validation passed');
-                
-                const userEmail = payload.upn || payload.email;
-                const allowedDomains = CONFIG.ALLOWED_DOMAIN.split(',').map(d => d.trim());
-                const isValidDomain = allowedDomains.some(domain => userEmail && userEmail.endsWith(domain));
-                
-                serverLog('📧 Domain validation', {
-                    'userEmail': userEmail,
-                    'allowedDomains': allowedDomains,
-                    'isValid': isValidDomain
-                });
-                
-                if (!userEmail || !isValidDomain) {
-                    serverLog('❌ Domain validation failed - BLOCKING ACCESS');
-                    showUnauthorized();
-                    return;
-                }
-                serverLog('✅ Domain validation passed');
-                
-                serverLog('🎉 User validation successful - GRANTING ACCESS', {
-                    'user': userEmail,
-                    'name': payload.name
-                });
-                showPdfApp(payload);
-                
-            } catch (error) {
-                serverLog('❌ Token validation exception', {
-                    'error': error.message,
-                    'stack': error.stack
-                });
-                showUnauthorized();
-            }
-        }
-
-        function showPdfApp(userInfo) {
-            serverLog('🎉 ACCESS GRANTED - Showing PDF app', {
-                'user': userInfo.name || userInfo.upn,
-                'email': userInfo.upn || userInfo.email
-            });
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('pdf-app').style.display = 'block';
-            document.getElementById('user-info').innerHTML = 
-                `Welcome, ${userInfo.name || userInfo.upn} | Processing PDFs made simple`;
-        }
-
-        function showUnauthorized() {
-            serverLog('❌ ACCESS DENIED - Showing unauthorized screen');
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('unauthorized').style.display = 'block';
-        }
 
         // Tab Management
         function switchTab(tabName) {
@@ -1490,62 +818,6 @@
                 showResult('unlock', error.message, true);
             } finally {
                 hideProgress('unlock', progress);
-            }
-        }
-
-        async function addPageNumbers() {
-            const file = document.getElementById('pagenums-file').files[0];
-            const url = document.getElementById('pagenums-url').value;
-            const startPage = document.getElementById('pagenums-start').value;
-            const position = document.getElementById('pagenums-position').value;
-            const skipFirst = document.getElementById('pagenums-skip-first').checked;
-
-            if (!file && !url) {
-                alert('Please select a file or enter a URL');
-                return;
-            }
-
-            const formData = new FormData();
-            if (file) formData.append('file', file);
-            if (url) formData.append('file_url', url);
-            formData.append('start_page', startPage);
-            formData.append('position', position);
-            formData.append('skip_first', skipFirst);
-            formData.append('return_type', 'url');
-
-            const progress = showProgress('pagenums');
-            try {
-                const result = await callAPI('/add-page-numbers', formData);
-                showResult('pagenums', result);
-            } catch (error) {
-                showResult('pagenums', error.message, true);
-            } finally {
-                hideProgress('pagenums', progress);
-            }
-        }
-
-        async function resizeToLetter() {
-            const file = document.getElementById('resize-file').files[0];
-            const url = document.getElementById('resize-url').value;
-
-            if (!file && !url) {
-                alert('Please select a file or enter a URL');
-                return;
-            }
-
-            const formData = new FormData();
-            if (file) formData.append('file', file);
-            if (url) formData.append('file_url', url);
-            formData.append('return_type', 'url');
-
-            const progress = showProgress('resize');
-            try {
-                const result = await callAPI('/resize-to-letter', formData);
-                showResult('resize', result);
-            } catch (error) {
-                showResult('resize', error.message, true);
-            } finally {
-                hideProgress('resize', progress);
             }
         }
 
