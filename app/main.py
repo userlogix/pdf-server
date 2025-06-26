@@ -2041,14 +2041,72 @@ def cleanup_status(request: Request):
     
     return status
 
-# Teams app route with environment variables injected
 @app.get("/teams-app", response_class=HTMLResponse)
-async def teams_app():
-    # Read the HTML template
+async def teams_app(request: Request, key: str = None):
+    """Simple auth with URL param + referrer check + detailed logging"""
+    
+    # Get request details
+    user_agent = request.headers.get("user-agent", "")
+    referer = request.headers.get("referer", "")
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Your secret key from environment
+    TEAMS_KEY = os.environ.get("TEAMS_KEY", "pdf-teams-2024")
+    
+    # Valid referrers (Teams domains)
+    VALID_REFERRERS = [
+        "teams.microsoft.com",
+        "teams.live.com", 
+        "m365.cloud.microsoft",
+    ]
+    
+    # Check URL parameter
+    key_valid = key == TEAMS_KEY
+    
+    # Check referrer
+    referrer_valid = any(domain in referer.lower() for domain in VALID_REFERRERS)
+    
+    # Log all attempts
+    print(f"\n🔍 TEAMS APP ACCESS ATTEMPT:")
+    print(f"   Key provided: {key}")
+    print(f"   Key valid: {key_valid}")
+    print(f"   Referrer: {referer}")
+    print(f"   Referrer valid: {referrer_valid}")
+    print(f"   User-Agent: {user_agent}")
+    print(f"   Client IP: {client_ip}")
+    print(f"   Access granted: {key_valid and referrer_valid}")
+    print("=" * 50)
+    
+    # Block if both checks fail
+    if not key_valid or not referrer_valid:
+        error_details = []
+        if not key_valid:
+            error_details.append(f"Invalid key")
+        if not referrer_valid:
+            error_details.append(f"Invalid referrer")
+        
+        print(f"❌ ACCESS DENIED: {', '.join(error_details)}")
+        
+        return HTMLResponse(f"""
+        <html>
+        <body style="font-family: Arial; text-align: center; padding: 50px;">
+            <h2>🚫 Access Denied</h2>
+            <p>This PDF Toolkit is only available through Microsoft Teams.</p>
+            <p style="font-size: 12px; color: #666; margin-top: 20px;">
+                Error: {', '.join(error_details)}<br>
+                Referrer: {referer}
+            </p>
+        </body>
+        </html>
+        """, status_code=403)
+    
+    print(f"✅ ACCESS GRANTED")
+    
+    # Read your existing HTML template and serve it
     with open("templates/teams-app.html", "r") as f:
         html_content = f.read()
     
-    # Replace placeholders with environment variables
+    # Replace placeholders with environment variables (your existing logic)
     for key, value in TEAMS_CONFIG.items():
         placeholder = f"{{{{{key}}}}}"
         html_content = html_content.replace(placeholder, str(value or ""))
