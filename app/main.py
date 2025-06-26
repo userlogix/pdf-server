@@ -479,6 +479,12 @@ async def add_watermark(
             # Create watermark
             packet = BytesIO()
             c = canvas.Canvas(packet, pagesize=letter)
+            
+            # Set PDF metadata for watermark overlay
+            c.setTitle("Watermark Overlay")
+            c.setAuthor("Zeal PDF Utility")
+            c.setCreator("Zeal PDF Utility v2.0")
+            
             c.setFillColor(gray, alpha=opacity)
             c.setFont("Helvetica", 50)
             
@@ -708,6 +714,13 @@ async def convert_to_pdf(
             
             c = canvas.Canvas(output_path, pagesize=letter)
             
+            # Set PDF metadata
+            pdf_title = filename if filename else "Converted Document"
+            c.setTitle(pdf_title)
+            c.setAuthor("Zeal PDF Utility")
+            c.setSubject("Document to PDF Conversion")
+            c.setCreator("Zeal PDF Utility v2.0")
+            
             if title:
                 c.setFont("Helvetica-Bold", 12)  # Smaller title font
                 # Use stringWidth to center text manually
@@ -847,6 +860,11 @@ async def make_pdf_searchable(
                 page_height = float(original_page.mediabox.height)
                 
                 c = canvas.Canvas(packet, pagesize=(page_width, page_height))
+                
+                # Set PDF metadata for OCR text overlay
+                c.setTitle("OCR Text Overlay")
+                c.setAuthor("Zeal PDF Utility")
+                c.setCreator("Zeal PDF Utility v2.0")
                 
                 # Add invisible text at OCR coordinates
                 image_width, image_height = image.size
@@ -1132,6 +1150,14 @@ async def prepare_document(
                 new_height = img_height * scale
                 
                 c = canvas.Canvas(working_path, pagesize=page_size)
+                
+                # Set PDF metadata
+                pdf_title = filename if filename else "Prepared Document"
+                c.setTitle(pdf_title)
+                c.setAuthor("Zeal PDF Utility")
+                c.setSubject("Document Preparation Pipeline")
+                c.setCreator("Zeal PDF Utility v2.0")
+                
                 x = (page_width - new_width) / 2
                 y = (page_height - new_height) / 2
                 c.drawImage(input_path, x, y, width=new_width, height=new_height, preserveAspectRatio=True)
@@ -1459,7 +1485,7 @@ async def image_to_pdf(
                     if chunk:
                         f.write(chunk)
 
-        # Create PDF with higher quality settings
+        # Create PDF with higher quality settings and metadata
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import letter
         from PIL import Image
@@ -1495,8 +1521,20 @@ async def image_to_pdf(
             # Use original size (might be clipped)
             new_width, new_height = img.size
         
-        # Create PDF with better quality settings
+        # Use custom filename if provided, otherwise default
+        output_filename = f"{filename}.pdf" if filename else "image_document.pdf"
+        
+        # Set PDF document title (without .pdf extension for metadata)
+        pdf_title = filename if filename else "Image Document"
+        
+        # Create PDF with better quality settings and metadata
         c = canvas.Canvas(output_path, pagesize=letter)
+        
+        # Set PDF metadata
+        c.setTitle(pdf_title)
+        c.setAuthor("Zeal PDF Utility")
+        c.setSubject("Image to PDF Conversion")
+        c.setCreator("Zeal PDF Utility v2.0")
         
         # Add title if provided (smaller font)
         if title:
@@ -1524,9 +1562,6 @@ async def image_to_pdf(
             os.remove(input_path)
         raise HTTPException(status_code=500, detail=f"Image to PDF error: {str(e)}")
 
-    # Use custom filename if provided, otherwise default
-    output_filename = f"{filename}.pdf" if filename else "image_document.pdf"
-    
     return return_file_response(output_path, return_type, output_filename)
 
 @app.post("/add-page-numbers", tags=["PDF Enhancement"])
@@ -1579,6 +1614,12 @@ async def add_page_numbers(
             # Create page number overlay
             packet = BytesIO()
             c = canvas.Canvas(packet, pagesize=letter)
+            
+            # Set PDF metadata for page number overlay
+            c.setTitle("Page Number Overlay")
+            c.setAuthor("Zeal PDF Utility")
+            c.setCreator("Zeal PDF Utility v2.0")
+            
             c.setFont("Helvetica", 10)
             
             # Position page number
