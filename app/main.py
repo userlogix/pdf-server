@@ -1503,6 +1503,8 @@ async def image_to_pdf(
     if not file and not file_url:
         raise HTTPException(status_code=400, detail="Send file or file_url")
 
+    processing_log = []  # Add detailed logging for debugging quality issues
+    
     input_path = os.path.join(TEMP_DIR, f"img_{uuid.uuid4()}")
     output_path = os.path.join(TEMP_DIR, f"out_{uuid.uuid4()}.pdf")
 
@@ -1535,56 +1537,74 @@ async def image_to_pdf(
                     if chunk:
                         f.write(chunk)
 
-        # Create PDF with higher quality settings and metadata
+        # Create PDF with MAXIMUM quality - no scaling unless absolutely necessary
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import letter
         from PIL import Image
-        import tempfile
         
-        # Open and process image with quality preservation
+        # Open image and preserve maximum quality
         img = Image.open(input_path)
+        original_format = img.format
+        processing_log.append(f"Original image: {img.size[0]}x{img.size[1]} pixels, format: {original_format}, mode: {img.mode}")
         
-        # Only convert to RGB if absolutely necessary, preserve original format when possible
-        if img.mode not in ['RGB', 'RGBA']:
+        # Only convert to RGB if absolutely necessary
+        if img.mode == 'P':  # Palette mode
             img = img.convert('RGB')
         elif img.mode == 'RGBA':
             # Handle transparency properly
             background = Image.new('RGB', img.size, (255, 255, 255))
             background.paste(img, mask=img.split()[-1] if len(img.split()) == 4 else None)
             img = background
+        elif img.mode not in ['RGB', 'L']:  # Keep grayscale as-is
+            img = img.convert('RGB')
         
-        # Calculate dimensions
-        page_width, page_height = letter
-        title_height = 50 if title else 20  # Reduced title space
+        # Calculate PDF dimensions
+        page_width, page_height = letter  # 612 x 792 points
+        title_height = 50 if title else 20
         available_height = page_height - title_height - 40  # margins
         available_width = page_width - 40  # margins
         
-        # Do high-quality scaling with PIL BEFORE ReportLab
-        if fit_to_letter:
-            img_width, img_height = img.size
-            scale_w = available_width / img_width
-            scale_h = available_height / img_height
-            scale = min(scale_w, scale_h)  # Use smaller scale to maintain aspect ratio
-            
-            new_width = int(img_width * scale)
-            new_height = int(img_height * scale)
-            
-            # Use high-quality resampling with PIL (much better than ReportLab)
-            img = img.resize((new_width, new_height), Image.LANCZOS)
-        else:
-            new_width, new_height = img.size
+        # Get image dimensions in pixels
+        img_width_px, img_height_px = img.size
         
-        # Save the processed image to a temporary file for ReportLab
-        temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
-        img.save(temp_image_path, 'PNG', optimize=True, quality=95)
+        # Convert available PDF space to pixels (assuming 72 DPI)
+        available_width_px = int(available_width * 2)  # Higher DPI for quality
+        available_height_px = int(available_height * 2)
+        
+        processing_log.append(f"Available PDF space: {available_width:.0f}x{available_height:.0f} points")
+        processing_log.append(f"Target pixel space: {available_width_px}x{available_height_px} pixels")
+        
+        # Only resize if image is larger than available space OR fit_to_letter is True
+        needs_resize = (img_width_px > available_width_px or img_height_px > available_height_px) or fit_to_letter
+        
+        if needs_resize:
+            # Calculate scaling to maintain aspect ratio
+            scale_w = available_width_px / img_width_px
+            scale_h = available_height_px / img_height_px
+            scale = min(scale_w, scale_h)
+            
+            new_width_px = int(img_width_px * scale)
+            new_height_px = int(img_height_px * scale)
+            
+            processing_log.append(f"Resizing from {img_width_px}x{img_height_px} to {new_width_px}x{new_height_px} (scale: {scale:.3f})")
+            
+            # Use the highest quality resampling available
+            img = img.resize((new_width_px, new_height_px), Image.Resampling.LANCZOS)
+        else:
+            new_width_px, new_height_px = img_width_px, img_height_px
+            processing_log.append(f"No resizing needed - using original size: {new_width_px}x{new_height_px}")
+        
+        # Save as uncompressed TIFF for maximum quality
+        temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_hq.tiff')
+        img.save(temp_image_path, 'TIFF', compression='lzw', dpi=(144, 144))  # High DPI, lossless compression
+        
+        processing_log.append(f"Saved high-quality temp image: {temp_image_path}")
         
         # Use custom filename if provided, otherwise default
         output_filename = f"{filename}.pdf" if filename else "image_document.pdf"
-        
-        # Set PDF document title (without .pdf extension for metadata)
         pdf_title = filename if filename else "Image Document"
         
-        # Create PDF with better quality settings and metadata
+        # Create PDF
         c = canvas.Canvas(output_path, pagesize=letter)
         
         # Set PDF metadata
@@ -1593,23 +1613,30 @@ async def image_to_pdf(
         c.setSubject("Image to PDF Conversion")
         c.setCreator("Zeal PDF Utility v2.0")
         
-        # Add title if provided (smaller font)
+        # Add title if provided
         if title:
-            c.setFont("Helvetica-Bold", 12)  # Reduced from 16 to 12
-            # Use stringWidth to center text manually (more reliable than drawCentredText)
+            c.setFont("Helvetica-Bold", 12)
             text_width = c.stringWidth(title, "Helvetica-Bold", 12)
             title_x = (page_width - text_width) / 2
-            c.drawString(title_x, page_height - 35, title)  # Adjusted position for smaller font
+            c.drawString(title_x, page_height - 35, title)
         
-        # Add the pre-scaled high-quality image
-        x = (page_width - new_width) / 2  # Center horizontally
-        y = (available_height - new_height) / 2 + 20  # Center vertically in available space
+        # Convert pixels back to points for PDF positioning
+        final_width_points = new_width_px / 2  # Convert back from high DPI
+        final_height_points = new_height_px / 2
         
-        # Draw the high-quality pre-processed image (no scaling needed by ReportLab)
-        c.drawImage(temp_image_path, x, y, width=new_width, height=new_height)
+        # Center the image
+        x = (page_width - final_width_points) / 2
+        y = (available_height - final_height_points) / 2 + 20
+        
+        processing_log.append(f"Placing image at ({x:.1f}, {y:.1f}) with size {final_width_points:.1f}x{final_height_points:.1f} points")
+        
+        # Draw image with NO additional scaling by ReportLab
+        c.drawImage(temp_image_path, x, y, width=final_width_points, height=final_height_points)
         c.save()
         
-        # Cleanup temporary processed image
+        processing_log.append("PDF creation completed")
+        
+        # Cleanup temporary image
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
         c.save()
@@ -1618,7 +1645,7 @@ async def image_to_pdf(
         if os.path.exists(input_path):
             os.remove(input_path)
         try:
-            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_hq.tiff')
             if os.path.exists(temp_image_path):
                 os.remove(temp_image_path)
         except:
@@ -1629,7 +1656,7 @@ async def image_to_pdf(
         if os.path.exists(input_path):
             os.remove(input_path)
         try:
-            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_hq.tiff')
             if os.path.exists(temp_image_path):
                 os.remove(temp_image_path)
         except:
