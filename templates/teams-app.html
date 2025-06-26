@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Toolkit - Teams App</title>
+    <script src="https://unpkg.com/@microsoft/teams-js@2.0.0/dist/MicrosoftTeams.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            color: #323130;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: #464775;
+            margin-bottom: 10px;
+        }
+
+        .loading, .unauthorized {
+            text-align: center;
+            padding: 50px;
+            background: white;
+            border-radius: 8px;
+            margin: 50px auto;
+            max-width: 400px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #464775;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .operations-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .operation-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-left: 4px solid #464775;
+        }
+
+        .operation-card h3 {
+            margin-bottom: 15px;
+            color: #464775;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #323130;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d2d0ce;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: #464775;
+            box-shadow: 0 0 0 2px rgba(70,71,117,0.1);
+        }
+
+        .file-upload {
+            border: 2px dashed #d2d0ce;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .file-upload:hover {
+            border-color: #464775;
+            background-color: #f8f8ff;
+        }
+
+        .file-upload.dragover {
+            border-color: #464775;
+            background-color: #f0f0ff;
+        }
+
+        .btn {
+            background: #464775;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s ease;
+        }
+
+        .btn:hover {
+            background: #3a3b63;
+        }
+
+        .btn:disabled {
+            background: #d2d0ce;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #0078d4;
+        }
+
+        .btn-secondary:hover {
+            background: #106ebe;
+        }
+
+        .progress {
+            width: 100%;
+            height: 4px;
+            background: #f3f2f1;
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: #464775;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .result {
+            background: #f8f8ff;
+            border: 1px solid #464775;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .result.success {
+            background: #f3f9f1;
+            border-color: #107c10;
+        }
+
+        .result.error {
+            background: #fdf3f4;
+            border-color: #d13438;
+        }
+
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #107c10;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            background: white;
+            border-radius: 8px;
+            padding: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .tab {
+            flex: 1;
+            padding: 10px 15px;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            background: #464775;
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .checkbox input {
+            width: auto;
+        }
+
+        .url-input {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+
+        .url-input .form-control {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading State -->
+    <div id="loading" class="loading">
+        <h3>Authenticating...</h3>
+        <div class="spinner"></div>
+        <p>Verifying your access to PDF Toolkit</p>
+    </div>
+
+    <!-- Unauthorized State -->
+    <div id="unauthorized" class="unauthorized" style="display:none;">
+        <h3>⚠️ Access Denied</h3>
+        <p>This PDF Toolkit is only available to authorized team members.</p>
+        <p style="margin-top: 10px; color: #666;">Please contact your administrator if you believe this is an error.</p>
+    </div>
+
+    <!-- Main App -->
+    <div id="pdf-app" style="display:none;">
+        <div class="container">
+            <div class="header">
+                <h1>🔧 PDF Toolkit</h1>
+                <p id="user-info">Processing PDFs made simple</p>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('basic')">Core PDF Operations</div>
+                <div class="tab" onclick="switchTab('conversion')">Document Conversion</div>
+                <div class="tab" onclick="switchTab('enhancement')">PDF Enhancement</div>
+            </div>
+
+            <!-- Core PDF Operations Tab -->
+            <div id="basic-tab" class="tab-content active">
+                <div class="operations-grid">
+                    <!-- Compress PDF -->
+                    <div class="operation-card">
+                        <h3>🗜️ Compress PDF</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('compress-file').click()" 
+                                 ondrop="handleFileDrop(event, 'compress-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="compress-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'compress')">
+                                <p>📁 Drop PDF here or click to select</p>
+                                <span id="compress-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter PDF URL:</label>
+                                <input type="url" id="compress-url" class="form-control" placeholder="https://example.com/document.pdf">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Compression Level:</label>
+                            <select id="compress-level" class="form-control">
+                                <option value="screen">Screen (Lowest quality, smallest size)</option>
+                                <option value="ebook" selected>eBook (Good quality, moderate size)</option>
+                                <option value="printer">Printer (High quality, larger size)</option>
+                                <option value="prepress">Prepress (Highest quality, largest size)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Max Pages (optional):</label>
+                            <input type="number" id="compress-max-pages" class="form-control" placeholder="Leave empty for all pages">
+                        </div>
+                        <button class="btn" onclick="compressPDF()">Compress PDF</button>
+                        <div id="compress-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="compress-result"></div>
+                    </div>
+
+                    <!-- Merge PDFs -->
+                    <div class="operation-card">
+                        <h3>🔗 Merge PDFs</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('merge-files').click()" 
+                                 ondrop="handleFileDrop(event, 'merge-files')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="merge-files" accept=".pdf" multiple style="display:none" onchange="updateFileName(this, 'merge')">
+                                <p>📁 Drop multiple PDFs here or click to select</p>
+                                <span id="merge-filename"></span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Or enter PDF URLs (comma-separated):</label>
+                            <textarea id="merge-urls" class="form-control" rows="3" placeholder="https://example.com/doc1.pdf, https://example.com/doc2.pdf"></textarea>
+                        </div>
+                        <button class="btn" onclick="mergePDFs()">Merge PDFs</button>
+                        <div id="merge-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="merge-result"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PDF Enhancement Tab -->
+            <div id="enhancement-tab" class="tab-content">
+                <div class="operations-grid">
+                    <!-- Add Watermark -->
+                    <div class="operation-card">
+                        <h3>🏷️ Add Watermark</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('watermark-file').click()" 
+                                 ondrop="handleFileDrop(event, 'watermark-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="watermark-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'watermark')">
+                                <p>📁 Drop PDF here or click to select</p>
+                                <span id="watermark-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter PDF URL:</label>
+                                <input type="url" id="watermark-url" class="form-control" placeholder="https://example.com/document.pdf">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Watermark Text:</label>
+                            <input type="text" id="watermark-text" class="form-control" placeholder="CONFIDENTIAL" value="CONFIDENTIAL">
+                        </div>
+                        <div style="display: flex; gap: 15px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Opacity (0.0 - 1.0):</label>
+                                <input type="number" id="watermark-opacity" class="form-control" min="0" max="1" step="0.1" value="0.3">
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Position:</label>
+                                <select id="watermark-position" class="form-control">
+                                    <option value="center" selected>Center</option>
+                                    <option value="top_left">Top Left</option>
+                                    <option value="top_right">Top Right</option>
+                                    <option value="bottom_left">Bottom Left</option>
+                                    <option value="bottom_right">Bottom Right</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button class="btn" onclick="addWatermark()">Add Watermark</button>
+                        <div id="watermark-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="watermark-result"></div>
+                    </div>
+
+                    <!-- Password Protection -->
+                    <div class="operation-card">
+                        <h3>🔒 Password Protect</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('protect-file').click()" 
+                                 ondrop="handleFileDrop(event, 'protect-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="protect-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'protect')">
+                                <p>📁 Drop PDF here or click to select</p>
+                                <span id="protect-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter PDF URL:</label>
+                                <input type="url" id="protect-url" class="form-control" placeholder="https://example.com/document.pdf">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Password:</label>
+                            <input type="password" id="protect-password" class="form-control" placeholder="Enter password">
+                        </div>
+                        <button class="btn" onclick="passwordProtect()">Protect PDF</button>
+                        <div id="protect-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="protect-result"></div>
+                    </div>
+
+                    <!-- Remove Password -->
+                    <div class="operation-card">
+                        <h3>🔓 Remove Password</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('unlock-file').click()" 
+                                 ondrop="handleFileDrop(event, 'unlock-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="unlock-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'unlock')">
+                                <p>📁 Drop protected PDF here or click to select</p>
+                                <span id="unlock-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter PDF URL:</label>
+                                <input type="url" id="unlock-url" class="form-control" placeholder="https://example.com/protected.pdf">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Current Password:</label>
+                            <input type="password" id="unlock-password" class="form-control" placeholder="Enter current password">
+                        </div>
+                        <button class="btn" onclick="passwordRemove()">Remove Password</button>
+                        <div id="unlock-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="unlock-result"></div>
+                    </div>
+
+                    <!-- Add Page Numbers -->
+                    <div class="operation-card">
+                        <h3>🔢 Add Page Numbers</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('pagenums-file').click()" 
+                                 ondrop="handleFileDrop(event, 'pagenums-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="pagenums-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'pagenums')">
+                                <p>📁 Drop PDF here or click to select</p>
+                                <span id="pagenums-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter PDF URL:</label>
+                                <input type="url" id="pagenums-url" class="form-control" placeholder="https://example.com/document.pdf">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 15px;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Start Number:</label>
+                                <input type="number" id="pagenums-start" class="form-control" value="1" min="1">
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Position:</label>
+                                <select id="pagenums-position" class="form-control">
+                                    <option value="bottom-center" selected>Bottom Center</option>
+                                    <option value="bottom-left">Bottom Left</option>
+                                    <option value="bottom-right">Bottom Right</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox">
+                                <input type="checkbox" id="pagenums-skip-first">
+                                <label>Skip numbering first page</label>
+                            </div>
+                        </div>
+                        <button class="btn" onclick="addPageNumbers()">Add Page Numbers</button>
+                        <div id="pagenums-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="pagenums-result"></div>
+                    </div>
+
+                    <!-- Resize to Letter -->
+                    <div class="operation-card">
+                        <h3>📏 Resize to Letter</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('resize-file').click()" 
+                                 ondrop="handleFileDrop(event, 'resize-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="resize-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'resize')">
+                                <p>📁 Drop PDF here or click to select</p>
+                                <span id="resize-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter PDF URL:</label>
+                                <input type="url" id="resize-url" class="form-control" placeholder="https://example.com/oversized.pdf">
+                            </div>
+                        </div>
+                        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+                            Resizes any PDF to standard US Letter size (8.5" × 11") while maintaining aspect ratio.
+                        </p>
+                        <button class="btn" onclick="resizeToLetter()">Resize to Letter</button>
+                        <div id="resize-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="resize-result"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Document Conversion Tab -->
+            <div id="conversion-tab" class="tab-content">
+                <div class="operations-grid">
+                    <!-- Universal Converter -->
+                    <div class="operation-card">
+                        <h3>🔄 Convert to PDF</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('convert-file').click()" 
+                                 ondrop="handleFileDrop(event, 'convert-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="convert-file" style="display:none" onchange="updateFileName(this, 'convert')" 
+                                       accept=".docx,.doc,.xlsx,.xls,.pptx,.ppt,.odt,.ods,.odp,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.txt,.rtf">
+                                <p>📁 Drop any document/image here or click to select</p>
+                                <small>Supports: Word, Excel, PowerPoint, Images, Text files</small>
+                                <span id="convert-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter file URL:</label>
+                                <input type="url" id="convert-url" class="form-control" placeholder="https://example.com/document.docx">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Title (for images):</label>
+                            <input type="text" id="convert-title" class="form-control" placeholder="Optional title for image conversions">
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox">
+                                <input type="checkbox" id="convert-fit-letter">
+                                <label>Fit images to letter size (8.5x11)</label>
+                            </div>
+                        </div>
+                        <button class="btn" onclick="convertToPDF()">Convert to PDF</button>
+                        <div id="convert-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="convert-result"></div>
+                    </div>
+
+                    <!-- Image to PDF -->
+                    <div class="operation-card">
+                        <h3>🖼️ Image to PDF</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('image-file').click()" 
+                                 ondrop="handleFileDrop(event, 'image-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="image-file" accept="image/*" style="display:none" onchange="updateFileName(this, 'image')">
+                                <p>📁 Drop image here or click to select</p>
+                                <span id="image-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter image URL:</label>
+                                <input type="url" id="image-url" class="form-control" placeholder="https://example.com/image.jpg">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Title (optional):</label>
+                            <input type="text" id="image-title" class="form-control" placeholder="Document title">
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox">
+                                <input type="checkbox" id="image-fit-letter">
+                                <label>Fit to letter size (8.5x11)</label>
+                            </div>
+                        </div>
+                        <button class="btn" onclick="imageToPDF()">Convert to PDF</button>
+                        <div id="image-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="image-result"></div>
+                    </div>
+
+                    <!-- Make Searchable -->
+                    <div class="operation-card">
+                        <h3>🔍 Make PDF Searchable</h3>
+                        <div class="form-group">
+                            <div class="file-upload" onclick="document.getElementById('searchable-file').click()" 
+                                 ondrop="handleFileDrop(event, 'searchable-file')" 
+                                 ondragover="event.preventDefault()" 
+                                 ondragenter="event.target.classList.add('dragover')" 
+                                 ondragleave="event.target.classList.remove('dragover')">
+                                <input type="file" id="searchable-file" accept=".pdf" style="display:none" onchange="updateFileName(this, 'searchable')">
+                                <p>📁 Drop scanned PDF here or click to select</p>
+                                <span id="searchable-filename"></span>
+                            </div>
+                        </div>
+                        <div class="url-input">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Or enter PDF URL:</label>
+                                <input type="url" id="searchable-url" class="form-control" placeholder="https://example.com/scanned.pdf">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>OCR Language:</label>
+                            <select id="searchable-language" class="form-control">
+                                <option value="eng" selected>English</option>
+                                <option value="spa">Spanish</option>
+                                <option value="fra">French</option>
+                                <option value="deu">German</option>
+                                <option value="ita">Italian</option>
+                                <option value="por">Portuguese</option>
+                            </select>
+                        </div>
+                        <button class="btn" onclick="makeSearchable()">Make Searchable</button>
+                        <div id="searchable-progress" class="progress" style="display:none;">
+                            <div class="progress-bar"></div>
+                        </div>
+                        <div id="searchable-result"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Configuration - Will be populated by server
+        const CONFIG = {
+            API_BASE_URL: '{{API_BASE_URL}}',
+            API_KEY: '{{API_KEY}}',
+            ALLOWED_TENANT_ID: '{{ALLOWED_TENANT_ID}}',
+            ALLOWED_DOMAIN: '{{ALLOWED_DOMAIN}}'
+        };
+
+        // Initialize Teams SDK
+        microsoftTeams.app.initialize();
+
+        // Authentication
+        microsoftTeams.authentication.getAuthToken().then(token => {
+            validateUser(token);
+        }).catch(error => {
+            console.error('Authentication failed:', error);
+            showUnauthorized();
+        });
+
+        function validateUser(token) {
+            try {
+                // Decode JWT token
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                
+                // Check tenant ID
+                if (payload.tid !== CONFIG.ALLOWED_TENANT_ID) {
+                    console.error('Invalid tenant:', payload.tid);
+                    showUnauthorized();
+                    return;
+                }
+                
+                // Check email domain
+                const userEmail = payload.upn || payload.email;
+                const allowedDomains = CONFIG.ALLOWED_DOMAIN.split(',').map(d => d.trim());
+                const isValidDomain = allowedDomains.some(domain => userEmail && userEmail.endsWith(domain));
+                
+                if (!userEmail || !isValidDomain) {
+                    console.error('Invalid domain:', userEmail, 'Allowed:', allowedDomains);
+                    showUnauthorized();
+                    return;
+                }
+                
+                // User is authorized
+                showPdfApp(payload);
+                
+            } catch (error) {
+                console.error('Token validation failed:', error);
+                showUnauthorized();
+            }
+        }
+
+        function showPdfApp(userInfo) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('pdf-app').style.display = 'block';
+            document.getElementById('user-info').innerHTML = 
+                `Welcome, ${userInfo.name || userInfo.upn} | Processing PDFs made simple`;
+        }
+
+        function showUnauthorized() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('unauthorized').style.display = 'block';
+        }
+
+        // Tab Management
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            if (tabName === 'basic') {
+                document.getElementById('basic-tab').classList.add('active');
+            } else if (tabName === 'conversion') {
+                document.getElementById('conversion-tab').classList.add('active');
+            } else if (tabName === 'enhancement') {
+                document.getElementById('enhancement-tab').classList.add('active');
+            }
+            
+            // Add active class to selected tab
+            event.target.classList.add('active');
+        }
+
+        // File Upload Helpers
+        function handleFileDrop(event, inputId) {
+            event.preventDefault();
+            event.target.classList.remove('dragover');
+            
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                const input = document.getElementById(inputId);
+                input.files = files;
+                updateFileName(input, inputId.split('-')[0]);
+            }
+        }
+
+        function updateFileName(input, operation) {
+            const span = document.getElementById(operation + '-filename');
+            if (input.files && input.files.length > 0) {
+                if (input.multiple) {
+                    span.textContent = `${input.files.length} files selected`;
+                } else {
+                    span.textContent = input.files[0].name;
+                }
+                span.style.display = 'block';
+                span.style.fontWeight = 'bold';
+                span.style.color = '#464775';
+            }
+        }
+
+        // Progress Management
+        function showProgress(operation) {
+            const progressEl = document.getElementById(operation + '-progress');
+            progressEl.style.display = 'block';
+            const bar = progressEl.querySelector('.progress-bar');
+            bar.style.width = '10%';
+            
+            // Simulate progress
+            let progress = 10;
+            const interval = setInterval(() => {
+                progress += Math.random() * 20;
+                if (progress > 90) progress = 90;
+                bar.style.width = progress + '%';
+            }, 500);
+            
+            return interval;
+        }
+
+        function hideProgress(operation, interval) {
+            clearInterval(interval);
+            const progressEl = document.getElementById(operation + '-progress');
+            const bar = progressEl.querySelector('.progress-bar');
+            bar.style.width = '100%';
+            setTimeout(() => {
+                progressEl.style.display = 'none';
+                bar.style.width = '0%';
+            }, 500);
+        }
+
+        function showResult(operation, result, isError = false) {
+            const resultEl = document.getElementById(operation + '-result');
+            resultEl.className = 'result ' + (isError ? 'error' : 'success');
+            
+            if (isError) {
+                resultEl.innerHTML = `<strong>❌ Error:</strong> ${result}`;
+            } else if (result.url) {
+                resultEl.innerHTML = `
+                    <strong>✅ Success!</strong><br>
+                    ${result.mb_saved ? `Saved ${result.mb_saved} MB (${result.percent_reduction}% reduction)` : 'Processing completed'}
+                    <a href="${result.url}" class="download-link" target="_blank">📥 Download Result</a>
+                `;
+            } else if (result.content_base64) {
+                const blob = base64ToBlob(result.content_base64, result.content_type);
+                const url = URL.createObjectURL(blob);
+                resultEl.innerHTML = `
+                    <strong>✅ Success!</strong><br>
+                    ${result.mb_saved ? `Saved ${result.mb_saved} MB (${result.percent_reduction}% reduction)` : 'Processing completed'}
+                    <a href="${url}" class="download-link" download="${result.filename}">📥 Download Result</a>
+                `;
+            } else {
+                resultEl.innerHTML = `<strong>✅ Success!</strong><br>${JSON.stringify(result, null, 2)}`;
+            }
+        }
+
+        function base64ToBlob(base64, contentType) {
+            const byteCharacters = atob(base64);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            return new Blob([byteArray], { type: contentType });
+        }
+
+        // API Call Helper
+        async function callAPI(endpoint, formData) {
+            const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'x-api-key': CONFIG.API_KEY
+                },
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || `HTTP ${response.status}`);
+            }
+
+            return await response.json();
+        }
+
+        // PDF Operations
+        async function compressPDF() {
+            const file = document.getElementById('compress-file').files[0];
+            const url = document.getElementById('compress-url').value;
+            const level = document.getElementById('compress-level').value;
+            const maxPages = document.getElementById('compress-max-pages').value;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            formData.append('compression_level', level);
+            formData.append('return_type', 'url');
+            if (maxPages) formData.append('max_pages', maxPages);
+
+            const progress = showProgress('compress');
+            try {
+                const result = await callAPI('/compress', formData);
+                showResult('compress', result);
+            } catch (error) {
+                showResult('compress', error.message, true);
+            } finally {
+                hideProgress('compress', progress);
+            }
+        }
+
+        async function mergePDFs() {
+            const files = document.getElementById('merge-files').files;
+            const urls = document.getElementById('merge-urls').value;
+
+            if (files.length === 0 && !urls) {
+                alert('Please select files or enter URLs');
+                return;
+            }
+
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+            if (urls) formData.append('file_urls', urls);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('merge');
+            try {
+                const result = await callAPI('/merge', formData);
+                showResult('merge', result);
+            } catch (error) {
+                showResult('merge', error.message, true);
+            } finally {
+                hideProgress('merge', progress);
+            }
+        }
+
+        async function addWatermark() {
+            const file = document.getElementById('watermark-file').files[0];
+            const url = document.getElementById('watermark-url').value;
+            const text = document.getElementById('watermark-text').value;
+            const opacity = document.getElementById('watermark-opacity').value;
+            const position = document.getElementById('watermark-position').value;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            formData.append('text', text);
+            formData.append('opacity', opacity);
+            formData.append('position', position);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('watermark');
+            try {
+                const result = await callAPI('/watermark', formData);
+                showResult('watermark', result);
+            } catch (error) {
+                showResult('watermark', error.message, true);
+            } finally {
+                hideProgress('watermark', progress);
+            }
+        }
+
+        async function passwordProtect() {
+            const file = document.getElementById('protect-file').files[0];
+            const url = document.getElementById('protect-url').value;
+            const password = document.getElementById('protect-password').value;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            if (!password) {
+                alert('Please enter a password');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            formData.append('password', password);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('protect');
+            try {
+                const result = await callAPI('/password-protect', formData);
+                showResult('protect', result);
+            } catch (error) {
+                showResult('protect', error.message, true);
+            } finally {
+                hideProgress('protect', progress);
+            }
+        }
+
+        async function passwordRemove() {
+            const file = document.getElementById('unlock-file').files[0];
+            const url = document.getElementById('unlock-url').value;
+            const password = document.getElementById('unlock-password').value;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            if (!password) {
+                alert('Please enter the current password');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            formData.append('password', password);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('unlock');
+            try {
+                const result = await callAPI('/password-remove', formData);
+                showResult('unlock', result);
+            } catch (error) {
+                showResult('unlock', error.message, true);
+            } finally {
+                hideProgress('unlock', progress);
+            }
+        }
+
+        async function addPageNumbers() {
+            const file = document.getElementById('pagenums-file').files[0];
+            const url = document.getElementById('pagenums-url').value;
+            const startPage = document.getElementById('pagenums-start').value;
+            const position = document.getElementById('pagenums-position').value;
+            const skipFirst = document.getElementById('pagenums-skip-first').checked;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            formData.append('start_page', startPage);
+            formData.append('position', position);
+            formData.append('skip_first', skipFirst);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('pagenums');
+            try {
+                const result = await callAPI('/add-page-numbers', formData);
+                showResult('pagenums', result);
+            } catch (error) {
+                showResult('pagenums', error.message, true);
+            } finally {
+                hideProgress('pagenums', progress);
+            }
+        }
+
+        async function resizeToLetter() {
+            const file = document.getElementById('resize-file').files[0];
+            const url = document.getElementById('resize-url').value;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('resize');
+            try {
+                const result = await callAPI('/resize-to-letter', formData);
+                showResult('resize', result);
+            } catch (error) {
+                showResult('resize', error.message, true);
+            } finally {
+                hideProgress('resize', progress);
+            }
+        }
+
+        async function convertToPDF() {
+            const file = document.getElementById('convert-file').files[0];
+            const url = document.getElementById('convert-url').value;
+            const title = document.getElementById('convert-title').value;
+            const fitToLetter = document.getElementById('convert-fit-letter').checked;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            if (title) formData.append('title', title);
+            formData.append('fit_to_letter', fitToLetter);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('convert');
+            try {
+                const result = await callAPI('/convert-to-pdf', formData);
+                showResult('convert', result);
+            } catch (error) {
+                showResult('convert', error.message, true);
+            } finally {
+                hideProgress('convert', progress);
+            }
+        }
+
+        async function imageToPDF() {
+            const file = document.getElementById('image-file').files[0];
+            const url = document.getElementById('image-url').value;
+            const title = document.getElementById('image-title').value;
+            const fitToLetter = document.getElementById('image-fit-letter').checked;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            if (title) formData.append('title', title);
+            formData.append('fit_to_letter', fitToLetter);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('image');
+            try {
+                const result = await callAPI('/image-to-pdf', formData);
+                showResult('image', result);
+            } catch (error) {
+                showResult('image', error.message, true);
+            } finally {
+                hideProgress('image', progress);
+            }
+        }
+
+        async function makeSearchable() {
+            const file = document.getElementById('searchable-file').files[0];
+            const url = document.getElementById('searchable-url').value;
+            const language = document.getElementById('searchable-language').value;
+
+            if (!file && !url) {
+                alert('Please select a file or enter a URL');
+                return;
+            }
+
+            const formData = new FormData();
+            if (file) formData.append('file', file);
+            if (url) formData.append('file_url', url);
+            formData.append('language', language);
+            formData.append('return_type', 'url');
+
+            const progress = showProgress('searchable');
+            try {
+                const result = await callAPI('/make-searchable', formData);
+                showResult('searchable', result);
+            } catch (error) {
+                showResult('searchable', error.message, true);
+            } finally {
+                hideProgress('searchable', progress);
+            }
+        }
+
+        // Utility Functions - None needed for this simplified version
+    </script>
+</body>
+</html>
+    </script>
+</body>
+</html>

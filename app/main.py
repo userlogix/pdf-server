@@ -1,3 +1,5 @@
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -44,6 +46,16 @@ app = FastAPI(
         }
     ]
 )
+
+TEAMS_CONFIG = {
+    "API_BASE_URL": os.environ.get("BASE_URL", "http://localhost:8000"),
+    "API_KEY": os.environ.get("API_KEY"),
+    "ALLOWED_TENANT_ID": os.environ.get("TEAMS_TENANT_ID"),
+    "ALLOWED_DOMAIN": os.environ.get("TEAMS_ALLOWED_DOMAIN", "@yourcompany.com")
+}
+
+# Templates directory
+templates = Jinja2Templates(directory="templates")
 
 TEMP_DIR = "/tmp/pdfcache"
 os.makedirs(TEMP_DIR, exist_ok=True)
@@ -2027,3 +2039,22 @@ def cleanup_status(request: Request):
         status["lazy_cleanup_info"] = "Cleanup runs on each API request"
     
     return status
+
+# Teams app route with environment variables injected
+@app.get("/teams-app", response_class=HTMLResponse)
+async def teams_app():
+    # Read the HTML template
+    with open("templates/teams-app.html", "r") as f:
+        html_content = f.read()
+    
+    # Replace placeholders with environment variables
+    for key, value in TEAMS_CONFIG.items():
+        placeholder = f"{{{{{key}}}}}"
+        html_content = html_content.replace(placeholder, str(value or ""))
+    
+    return HTMLResponse(content=html_content)
+
+# Optional: Add a simple redirect for root
+@app.get("/")
+async def root():
+    return {"message": "PDF Toolkit API", "teams_app": "/teams-app"}
