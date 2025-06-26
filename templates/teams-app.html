@@ -247,6 +247,19 @@
         .url-input .form-control {
             flex: 1;
         }
+
+        .debug-context {
+            text-align: left;
+            font-family: monospace;
+            font-size: 11px;
+            max-height: 400px;
+            overflow-y: auto;
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            border: 1px solid #d2d0ce;
+        }
     </style>
 </head>
 <body>
@@ -674,9 +687,8 @@
 
         // Debug logging that sends to server
         function serverLog(message, data = null) {
-            console.log(message, data); // Still log to browser console for completeness
+            console.log(message, data);
             
-            // Send to server for Digital Ocean logs - use relative URL
             fetch('/debug-log', {
                 method: 'POST',
                 headers: {
@@ -694,9 +706,190 @@
             }).catch(e => console.log('Failed to send server log:', e));
         }
 
-        // ENHANCED TEAMS AUTHENTICATION WITH STEP-BY-STEP DEBUGGING
-        
-        // Step-by-step debugging with timeouts
+        // DEBUG CONTEXT FUNCTIONS
+        function debugTeamsContext() {
+            serverLog('🔍 DEBUG: Checking all available Teams context');
+            
+            const contextInfo = {
+                'URL Parameters': Object.fromEntries(new URLSearchParams(window.location.search)),
+                'Window Name': window.name,
+                'Referrer': document.referrer,
+                'User Agent': navigator.userAgent,
+                'LocalStorage': getLocalStorageData(),
+                'SessionStorage': getSessionStorageData(),
+                'Cookies': document.cookie,
+                'Teams Parent': getTeamsParentInfo(),
+                'Window Location': {
+                    'href': window.location.href,
+                    'search': window.location.search,
+                    'hash': window.location.hash,
+                    'pathname': window.location.pathname
+                }
+            };
+            
+            serverLog('📋 COMPLETE TEAMS CONTEXT', contextInfo);
+            
+            // Show context on screen
+            document.getElementById('loading').innerHTML = `
+                <h3>🔍 Teams Context Debug</h3>
+                <div class="debug-context">
+                    <pre>${JSON.stringify(contextInfo, null, 2)}</pre>
+                </div>
+                <button onclick="proceedWithExtraction()" style="margin: 5px; padding: 8px 16px; background: #107c10; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    Use This Context
+                </button>
+                <button onclick="location.reload()" style="margin: 5px; padding: 8px 16px; background: #d13438; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    Retry
+                </button>
+            `;
+        }
+
+        function getLocalStorageData() {
+            try {
+                const data = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    data[key] = localStorage.getItem(key);
+                }
+                return data;
+            } catch (e) {
+                return 'LocalStorage not accessible';
+            }
+        }
+
+        function getSessionStorageData() {
+            try {
+                const data = {};
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const key = sessionStorage.key(i);
+                    data[key] = sessionStorage.getItem(key);
+                }
+                return data;
+            } catch (e) {
+                return 'SessionStorage not accessible';
+            }
+        }
+
+        function getTeamsParentInfo() {
+            try {
+                return {
+                    'Parent Window': window.parent !== window,
+                    'Frame Count': window.frames.length
+                };
+            } catch (e) {
+                return 'Teams parent info not accessible due to CORS';
+            }
+        }
+
+        // CONTEXT EXTRACTION LOGIC
+        function proceedWithExtraction() {
+            serverLog('🔧 Proceeding with context extraction');
+            
+            let userEmail = null;
+            
+            // Method 1: URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            userEmail = urlParams.get('loginHint') || urlParams.get('upn') || urlParams.get('userPrincipalName');
+            
+            if (userEmail) {
+                serverLog('✅ Found user in URL parameters', { email: userEmail });
+                validateExtractedUser(userEmail);
+                return;
+            }
+            
+            // Method 2: Window name
+            if (window.name && window.name.includes('@')) {
+                try {
+                    const parsed = JSON.parse(window.name);
+                    userEmail = parsed.userPrincipalName || parsed.upn;
+                } catch (e) {
+                    if (window.name.includes('@')) {
+                        userEmail = window.name;
+                    }
+                }
+                
+                if (userEmail) {
+                    serverLog('✅ Found user in window name', { email: userEmail });
+                    validateExtractedUser(userEmail);
+                    return;
+                }
+            }
+            
+            // Method 3: Storage data
+            try {
+                const storageKeys = ['userPrincipalName', 'upn', 'loginHint', 'user', 'email'];
+                for (const key of storageKeys) {
+                    userEmail = localStorage.getItem(key) || sessionStorage.getItem(key);
+                    if (userEmail && userEmail.includes('@')) {
+                        serverLog('✅ Found user in storage', { key, email: userEmail });
+                        validateExtractedUser(userEmail);
+                        return;
+                    }
+                }
+            } catch (e) {
+                serverLog('❌ Storage extraction failed');
+            }
+            
+            // Method 4: PostMessage to Teams parent
+            serverLog('🔧 Requesting user context from Teams parent');
+            window.parent.postMessage({ type: 'getContext', action: 'getUserInfo' }, '*');
+            
+            // Listen for Teams response
+            window.addEventListener('message', function(event) {
+                if (event.data && (event.data.userPrincipalName || event.data.upn)) {
+                    const email = event.data.userPrincipalName || event.data.upn;
+                    serverLog('✅ Received user info from Teams parent', { email });
+                    validateExtractedUser(email);
+                }
+            });
+            
+            // Method 5: Fallback prompt after delay
+            setTimeout(() => {
+                if (document.getElementById('loading').style.display !== 'none') {
+                    userEmail = prompt("Enter your work email to access PDF Toolkit:");
+                    if (userEmail) {
+                        validateExtractedUser(userEmail);
+                    } else {
+                        showUnauthorized();
+                    }
+                }
+            }, 3000);
+        }
+
+        function validateExtractedUser(userEmail) {
+            serverLog('🔍 Validating extracted user', { email: userEmail });
+            
+            if (!userEmail || !userEmail.includes('@')) {
+                serverLog('❌ Invalid email format');
+                showUnauthorized();
+                return;
+            }
+            
+            // Domain validation
+            const allowedDomains = CONFIG.ALLOWED_DOMAIN.split(',').map(d => d.trim());
+            const isValidDomain = allowedDomains.some(domain => userEmail.endsWith(domain));
+            
+            if (!isValidDomain) {
+                serverLog('❌ Domain validation failed', { 
+                    email: userEmail, 
+                    allowedDomains: allowedDomains 
+                });
+                showUnauthorized();
+                return;
+            }
+            
+            // Create user object
+            const user = {
+                name: userEmail.split('@')[0],
+                upn: userEmail,
+                tid: CONFIG.ALLOWED_TENANT_ID
+            };
+            
+            serverLog('✅ User validation successful', user);
+            showPdfApp(user);
+        }
+
+        // TEAMS SDK INITIALIZATION WITH ENHANCED DEBUGGING
         serverLog('🚀 Starting Teams app initialization');
         serverLog('📋 CONFIG check', {
             'API_BASE_URL': CONFIG.API_BASE_URL,
@@ -730,19 +923,14 @@
             serverLog('⏰ GetAuthToken timeout after 15 seconds');
             if (document.getElementById('loading').style.display !== 'none') {
                 document.getElementById('loading').innerHTML = `
-                    <h3>⏰ Authentication Debug Information</h3>
-                    <div style="text-align: left; max-width: 500px; margin: 0 auto; font-family: monospace; font-size: 12px;">
-                        <p><strong>Check browser console (F12) for detailed logs</strong></p>
-                        <p>Most likely issues:</p>
-                        <ul>
-                            <li>Domain not in validDomains (yours is correct)</li>
-                            <li>Azure AD SSO not configured properly</li>
-                            <li>Missing Teams client authorizations</li>
-                        </ul>
-                        <button onclick="location.reload()" style="margin-top: 15px; padding: 8px 16px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                            Retry Authentication
-                        </button>
-                    </div>
+                    <h3>⏰ Teams SDK Timeout</h3>
+                    <p>Teams authentication failed. Debug the available context:</p>
+                    <button onclick="debugTeamsContext()" style="margin: 10px; padding: 8px 16px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        🔍 Show Teams Context
+                    </button>
+                    <button onclick="proceedWithExtraction()" style="margin: 10px; padding: 8px 16px; background: #107c10; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        ⚡ Try Context Extraction
+                    </button>
                 `;
             }
         }, 15000);
@@ -750,19 +938,15 @@
         try {
             serverLog('🔧 Step 1: Calling microsoftTeams.app.initialize()');
             
-            // Test if we can call initialize with a promise
             microsoftTeams.app.initialize().then(() => {
                 clearTimeout(initTimeout);
                 serverLog('✅ Step 1 SUCCESS: Teams SDK initialized');
                 
-                // Test if we're actually in Teams
                 serverLog('🔧 Step 2: Testing Teams environment');
                 
-                // Check if we can access Teams context before calling getContext
                 try {
                     serverLog('🔧 Step 2a: Calling microsoftTeams.app.getContext()');
                     
-                    // Use both promise and callback approaches for maximum compatibility
                     const contextPromise = microsoftTeams.app.getContext().then(context => {
                         clearTimeout(contextTimeout);
                         serverLog('✅ Step 2 SUCCESS: Teams context received (Promise)', {
@@ -775,7 +959,6 @@
                             'team': context.team?.displayName
                         });
                         
-                        // Validate tenant immediately
                         if (context.user?.tenant?.id !== CONFIG.ALLOWED_TENANT_ID) {
                             serverLog('❌ Tenant mismatch - STOPPING', {
                                 'expected': CONFIG.ALLOWED_TENANT_ID,
@@ -801,7 +984,6 @@
                         showUnauthorized();
                     });
                     
-                    // Also try the callback approach as fallback
                     setTimeout(() => {
                         try {
                             serverLog('🔧 Step 2b: Trying callback approach for getContext()');
@@ -867,7 +1049,6 @@
             try {
                 serverLog('🔧 Step 3a: Calling microsoftTeams.authentication.getAuthToken()');
                 
-                // Try both new and old API approaches
                 const authRequest = {
                     successCallback: (token) => {
                         clearTimeout(authTimeout);
@@ -895,7 +1076,6 @@
                             'fullError': JSON.stringify(error, null, 2)
                         });
                         
-                        // Provide specific guidance based on error
                         if (error?.message?.includes('resource defined in manifest')) {
                             serverLog('💡 GUIDANCE: Manifest webApplicationInfo.resource mismatch with Azure AD');
                         } else if (error?.message?.includes('consent')) {
@@ -906,13 +1086,11 @@
                         
                         showUnauthorized();
                     },
-                    resources: [] // Explicitly empty for Teams SSO
+                    resources: []
                 };
                 
-                // Call getAuthToken
                 microsoftTeams.authentication.getAuthToken(authRequest);
                 
-                // Also try the promise-based approach if available
                 if (microsoftTeams.authentication.getAuthToken.length === 0) {
                     serverLog('🔧 Step 3b: Also trying promise-based getAuthToken()');
                     microsoftTeams.authentication.getAuthToken()
@@ -947,7 +1125,6 @@
             });
             
             try {
-                // Decode JWT token
                 const parts = token.split('.');
                 serverLog('🧩 Token parts analysis', {
                     'partsCount': parts.length,
@@ -973,7 +1150,6 @@
                     'iss': payload.iss
                 });
                 
-                // Check tenant ID
                 serverLog('🏢 Tenant validation', {
                     'expected': CONFIG.ALLOWED_TENANT_ID,
                     'received': payload.tid,
@@ -987,7 +1163,6 @@
                 }
                 serverLog('✅ Tenant ID validation passed');
                 
-                // Check email domain
                 const userEmail = payload.upn || payload.email;
                 const allowedDomains = CONFIG.ALLOWED_DOMAIN.split(',').map(d => d.trim());
                 const isValidDomain = allowedDomains.some(domain => userEmail && userEmail.endsWith(domain));
@@ -1005,7 +1180,6 @@
                 }
                 serverLog('✅ Domain validation passed');
                 
-                // User is authorized
                 serverLog('🎉 User validation successful - GRANTING ACCESS', {
                     'user': userEmail,
                     'name': payload.name
@@ -1040,17 +1214,14 @@
 
         // Tab Management
         function switchTab(tabName) {
-            // Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            // Remove active class from all tabs
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            // Show selected tab content
             if (tabName === 'basic') {
                 document.getElementById('basic-tab').classList.add('active');
             } else if (tabName === 'conversion') {
@@ -1059,7 +1230,6 @@
                 document.getElementById('enhancement-tab').classList.add('active');
             }
             
-            // Add active class to selected tab
             event.target.classList.add('active');
         }
 
@@ -1097,7 +1267,6 @@
             const bar = progressEl.querySelector('.progress-bar');
             bar.style.width = '10%';
             
-            // Simulate progress
             let progress = 10;
             const interval = setInterval(() => {
                 progress += Math.random() * 20;
@@ -1464,8 +1633,6 @@
                 hideProgress('searchable', progress);
             }
         }
-
-        // Utility Functions - None needed for this simplified version
     </script>
 </body>
 </html>
