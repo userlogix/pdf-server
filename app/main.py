@@ -2058,3 +2058,28 @@ async def teams_app():
 @app.get("/")
 async def root():
     return {"message": "PDF Toolkit API", "teams_app": "/teams-app"}
+
+@app.post("/debug-log")
+async def debug_log(request: Request):
+    """Debug endpoint to receive client-side logs for troubleshooting Teams app"""
+    try:
+        api_key = request.headers.get("x-api-key")
+        # Don't validate API key for debug logs to ensure we can see authentication issues
+        
+        body = await request.json()
+        message = body.get("message", "")
+        data = body.get("data", {})
+        timestamp = body.get("timestamp", "")
+        user_agent = body.get("userAgent", "")
+        
+        # Log to server console (visible in Digital Ocean logs)
+        print(f"🔍 TEAMS DEBUG [{timestamp}]: {message}")
+        if data:
+            print(f"📊 DEBUG DATA: {data}")
+        if user_agent:
+            print(f"🌐 USER AGENT: {user_agent}")
+        
+        return {"status": "logged"}
+    except Exception as e:
+        print(f"❌ Debug log error: {str(e)}")
+        return {"status": "error", "error": str(e)}

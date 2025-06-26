@@ -671,50 +671,184 @@
             ALLOWED_DOMAIN: '{{ALLOWED_DOMAIN}}'
         };
 
-        // Initialize Teams SDK
-        microsoftTeams.app.initialize();
+        // Debug logging that sends to server
+        function serverLog(message, data = null) {
+            console.log(message, data); // Still log to browser console for completeness
+            
+            // Send to server for Digital Ocean logs
+            fetch(`${CONFIG.API_BASE_URL}/debug-log`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': CONFIG.API_KEY || 'missing-key'
+                },
+                body: JSON.stringify({
+                    message: message,
+                    data: data,
+                    timestamp: new Date().toISOString(),
+                    userAgent: navigator.userAgent
+                })
+            }).catch(e => console.log('Failed to send server log:', e));
+        }
 
-        // Authentication
-        microsoftTeams.authentication.getAuthToken().then(token => {
-            validateUser(token);
-        }).catch(error => {
-            console.error('Authentication failed:', error);
-            showUnauthorized();
+        // Initialize Teams SDK with server debugging
+        serverLog('🚀 Starting Teams app initialization');
+        serverLog('📋 CONFIG check', {
+            'API_BASE_URL': CONFIG.API_BASE_URL,
+            'API_KEY': CONFIG.API_KEY ? 'Set' : 'Missing',
+            'TENANT_ID': CONFIG.ALLOWED_TENANT_ID || 'Missing',
+            'DOMAIN': CONFIG.ALLOWED_DOMAIN || 'Missing'
         });
+        
+        // Add timeout for debugging stuck authentication
+        setTimeout(() => {
+            if (document.getElementById('loading').style.display !== 'none') {
+                serverLog('⏰ Authentication timeout after 10 seconds');
+                document.getElementById('loading').innerHTML = `
+                    <h3>⏰ Authentication Timeout</h3>
+                    <p>Check Digital Ocean app logs for detailed debugging</p>
+                    <p style="font-size: 12px; color: #666;">
+                        Common issues:<br>
+                        • Teams SSO not configured<br>
+                        • App not registered in Azure<br>
+                        • Missing tenant permissions
+                    </p>
+                `;
+            }
+        }, 10000);
+        
+        try {
+            microsoftTeams.app.initialize();
+            serverLog('✅ Teams SDK initialized successfully');
+            
+            // Check if we're in Teams context
+            microsoftTeams.app.getContext().then(context => {
+                serverLog('📱 Teams context received', {
+                    'user': context.user,
+                    'tenant': context.user?.tenant,
+                    'app': context.app
+                });
+                
+                // Now try authentication
+                serverLog('🔐 Attempting to get auth token...');
+                microsoftTeams.authentication.getAuthToken().then(token => {
+                    serverLog('🎫 Auth token received', {
+                        'tokenLength': token?.length,
+                        'hasToken': !!token
+                    });
+                    validateUser(token);
+                }).catch(error => {
+                    serverLog('❌ getAuthToken failed', {
+                        'error': error.message,
+                        'errorCode': error.errorCode,
+                        'fullError': JSON.stringify(error, null, 2)
+                    });
+                    showUnauthorized();
+                });
+                
+            }).catch(contextError => {
+                serverLog('❌ Failed to get Teams context', {
+                    'error': contextError.message,
+                    'fullError': JSON.stringify(contextError, null, 2)
+                });
+                showUnauthorized();
+            });
+            
+        } catch (initError) {
+            serverLog('❌ Teams SDK initialization failed', {
+                'error': initError.message,
+                'stack': initError.stack
+            });
+            showUnauthorized();
+        }
 
         function validateUser(token) {
+            serverLog('🔍 Starting user validation');
+            serverLog('🎫 Token check', {
+                'hasToken': !!token,
+                'tokenLength': token?.length
+            });
+            
             try {
                 // Decode JWT token
-                const payload = JSON.parse(atob(token.split('.')[1]));
+                const parts = token.split('.');
+                serverLog('🧩 Token parts analysis', {
+                    'partsCount': parts.length,
+                    'expectedParts': 3
+                });
                 
-                // Check tenant ID
-                if (payload.tid !== CONFIG.ALLOWED_TENANT_ID) {
-                    console.error('Invalid tenant:', payload.tid);
+                if (parts.length !== 3) {
+                    serverLog('❌ Invalid JWT format', {
+                        'expected': 3,
+                        'received': parts.length
+                    });
                     showUnauthorized();
                     return;
                 }
+                
+                const payload = JSON.parse(atob(parts[1]));
+                serverLog('📋 Decoded token payload', {
+                    'tid': payload.tid,
+                    'upn': payload.upn,
+                    'email': payload.email,
+                    'name': payload.name,
+                    'aud': payload.aud,
+                    'iss': payload.iss
+                });
+                
+                // Check tenant ID
+                serverLog('🏢 Tenant validation', {
+                    'expected': CONFIG.ALLOWED_TENANT_ID,
+                    'received': payload.tid,
+                    'match': payload.tid === CONFIG.ALLOWED_TENANT_ID
+                });
+                
+                if (payload.tid !== CONFIG.ALLOWED_TENANT_ID) {
+                    serverLog('❌ Tenant ID mismatch - BLOCKING ACCESS');
+                    showUnauthorized();
+                    return;
+                }
+                serverLog('✅ Tenant ID validation passed');
                 
                 // Check email domain
                 const userEmail = payload.upn || payload.email;
                 const allowedDomains = CONFIG.ALLOWED_DOMAIN.split(',').map(d => d.trim());
                 const isValidDomain = allowedDomains.some(domain => userEmail && userEmail.endsWith(domain));
                 
+                serverLog('📧 Domain validation', {
+                    'userEmail': userEmail,
+                    'allowedDomains': allowedDomains,
+                    'isValid': isValidDomain
+                });
+                
                 if (!userEmail || !isValidDomain) {
-                    console.error('Invalid domain:', userEmail, 'Allowed:', allowedDomains);
+                    serverLog('❌ Domain validation failed - BLOCKING ACCESS');
                     showUnauthorized();
                     return;
                 }
+                serverLog('✅ Domain validation passed');
                 
                 // User is authorized
+                serverLog('🎉 User validation successful - GRANTING ACCESS', {
+                    'user': userEmail,
+                    'name': payload.name
+                });
                 showPdfApp(payload);
                 
             } catch (error) {
-                console.error('Token validation failed:', error);
+                serverLog('❌ Token validation exception', {
+                    'error': error.message,
+                    'stack': error.stack
+                });
                 showUnauthorized();
             }
         }
 
         function showPdfApp(userInfo) {
+            serverLog('🎉 ACCESS GRANTED - Showing PDF app', {
+                'user': userInfo.name || userInfo.upn,
+                'email': userInfo.upn || userInfo.email
+            });
             document.getElementById('loading').style.display = 'none';
             document.getElementById('pdf-app').style.display = 'block';
             document.getElementById('user-info').innerHTML = 
@@ -722,6 +856,7 @@
         }
 
         function showUnauthorized() {
+            serverLog('❌ ACCESS DENIED - Showing unauthorized screen');
             document.getElementById('loading').style.display = 'none';
             document.getElementById('unauthorized').style.display = 'block';
         }
