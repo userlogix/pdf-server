@@ -668,15 +668,16 @@
             API_BASE_URL: '{{API_BASE_URL}}',
             API_KEY: '{{API_KEY}}',
             ALLOWED_TENANT_ID: '{{ALLOWED_TENANT_ID}}',
-            ALLOWED_DOMAIN: '{{ALLOWED_DOMAIN}}'
+            ALLOWED_DOMAIN: '{{ALLOWED_DOMAIN}}',
+            CLIENT_ID: '{{CLIENT_ID}}'
         };
 
         // Debug logging that sends to server
         function serverLog(message, data = null) {
             console.log(message, data); // Still log to browser console for completeness
             
-            // Send to server for Digital Ocean logs
-            fetch(`${CONFIG.API_BASE_URL}/debug-log`, {
+            // Send to server for Digital Ocean logs - use relative URL
+            fetch('/debug-log', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -697,7 +698,8 @@
             'API_BASE_URL': CONFIG.API_BASE_URL,
             'API_KEY': CONFIG.API_KEY ? 'Set' : 'Missing',
             'TENANT_ID': CONFIG.ALLOWED_TENANT_ID || 'Missing',
-            'DOMAIN': CONFIG.ALLOWED_DOMAIN || 'Missing'
+            'DOMAIN': CONFIG.ALLOWED_DOMAIN || 'Missing',
+            'CLIENT_ID': CONFIG.CLIENT_ID || 'Missing'
         });
         
         // Add timeout for debugging stuck authentication
@@ -979,7 +981,7 @@
 
         // API Call Helper
         async function callAPI(endpoint, formData) {
-            const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+            const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'x-api-key': CONFIG.API_KEY
