@@ -51,7 +51,8 @@ TEAMS_CONFIG = {
     "API_BASE_URL": os.environ.get("BASE_URL", "http://localhost:8000"),
     "API_KEY": os.environ.get("API_KEY"),
     "ALLOWED_TENANT_ID": os.environ.get("TEAMS_TENANT_ID"),
-    "ALLOWED_DOMAIN": os.environ.get("TEAMS_ALLOWED_DOMAIN", "@yourcompany.com")
+    "ALLOWED_DOMAIN": os.environ.get("TEAMS_ALLOWED_DOMAIN", "@yourcompany.com"),
+    "CLIENT_ID": os.environ.get("TEAMS_CLIENT_ID")  # Add this line
 }
 
 # Templates directory
@@ -2063,21 +2064,15 @@ async def root():
 async def debug_log(request: Request):
     """Debug endpoint to receive client-side logs for troubleshooting Teams app"""
     try:
-        api_key = request.headers.get("x-api-key")
-        # Don't validate API key for debug logs to ensure we can see authentication issues
-        
         body = await request.json()
         message = body.get("message", "")
         data = body.get("data", {})
         timestamp = body.get("timestamp", "")
-        user_agent = body.get("userAgent", "")
         
         # Log to server console (visible in Digital Ocean logs)
         print(f"🔍 TEAMS DEBUG [{timestamp}]: {message}")
         if data:
             print(f"📊 DEBUG DATA: {data}")
-        if user_agent:
-            print(f"🌐 USER AGENT: {user_agent}")
         
         return {"status": "logged"}
     except Exception as e:
