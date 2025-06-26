@@ -1639,7 +1639,6 @@ async def image_to_pdf(
         # Cleanup temporary image
         if os.path.exists(temp_image_path):
             os.remove(temp_image_path)
-        c.save()
         
         # Cleanup input file and any temporary files
         if os.path.exists(input_path):
