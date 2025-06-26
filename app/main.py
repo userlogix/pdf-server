@@ -2068,11 +2068,16 @@ async def debug_log(request: Request):
         message = body.get("message", "")
         data = body.get("data", {})
         timestamp = body.get("timestamp", "")
+        current_url = body.get("currentURL", "")
+        is_in_teams = body.get("isInTeams", False)
         
         # Log to server console (visible in Digital Ocean logs)
         print(f"🔍 TEAMS DEBUG [{timestamp}]: {message}")
         if data:
             print(f"📊 DEBUG DATA: {data}")
+        if current_url:
+            print(f"🌐 CURRENT URL: {current_url}")
+        print(f"📱 IN TEAMS CONTEXT: {is_in_teams}")
         
         return {"status": "logged"}
     except Exception as e:

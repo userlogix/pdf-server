@@ -687,7 +687,9 @@
                     message: message,
                     data: data,
                     timestamp: new Date().toISOString(),
-                    userAgent: navigator.userAgent
+                    userAgent: navigator.userAgent,
+                    currentURL: window.location.href,
+                    isInTeams: !!(window.parent !== window)
                 })
             }).catch(e => console.log('Failed to send server log:', e));
         }
@@ -700,6 +702,13 @@
             'TENANT_ID': CONFIG.ALLOWED_TENANT_ID || 'Missing',
             'DOMAIN': CONFIG.ALLOWED_DOMAIN || 'Missing',
             'CLIENT_ID': CONFIG.CLIENT_ID || 'Missing'
+        });
+        
+        serverLog('🌍 Environment check', {
+            'isInIframe': window.parent !== window,
+            'currentURL': window.location.href,
+            'referrer': document.referrer,
+            'hasTeamsSDK': typeof microsoftTeams !== 'undefined'
         });
         
         // Add timeout for debugging stuck authentication
@@ -731,21 +740,26 @@
                     'app': context.app
                 });
                 
-                // Now try authentication
+                // Now try authentication with detailed logging
                 serverLog('🔐 Attempting to get auth token...');
-                microsoftTeams.authentication.getAuthToken().then(token => {
-                    serverLog('🎫 Auth token received', {
-                        'tokenLength': token?.length,
-                        'hasToken': !!token
-                    });
-                    validateUser(token);
-                }).catch(error => {
-                    serverLog('❌ getAuthToken failed', {
-                        'error': error.message,
-                        'errorCode': error.errorCode,
-                        'fullError': JSON.stringify(error, null, 2)
-                    });
-                    showUnauthorized();
+                
+                microsoftTeams.authentication.getAuthToken({
+                    successCallback: (token) => {
+                        serverLog('🎫 Auth token SUCCESS', {
+                            'tokenLength': token?.length,
+                            'hasToken': !!token
+                        });
+                        validateUser(token);
+                    },
+                    failureCallback: (error) => {
+                        serverLog('❌ Auth token FAILURE', {
+                            'error': error,
+                            'errorCode': error?.errorCode,
+                            'message': error?.message,
+                            'fullError': JSON.stringify(error, null, 2)
+                        });
+                        showUnauthorized();
+                    }
                 });
                 
             }).catch(contextError => {
