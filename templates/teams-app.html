@@ -43,7 +43,7 @@
             background: white;
             border-radius: 8px;
             margin: 50px auto;
-            max-width: 400px;
+            max-width: 500px;
         }
 
         .spinner {
@@ -694,7 +694,9 @@
             }).catch(e => console.log('Failed to send server log:', e));
         }
 
-        // Initialize Teams SDK with server debugging
+        // ENHANCED TEAMS AUTHENTICATION WITH STEP-BY-STEP DEBUGGING
+        
+        // Step-by-step debugging with timeouts
         serverLog('🚀 Starting Teams app initialization');
         serverLog('📋 CONFIG check', {
             'API_BASE_URL': CONFIG.API_BASE_URL,
@@ -703,86 +705,245 @@
             'DOMAIN': CONFIG.ALLOWED_DOMAIN || 'Missing',
             'CLIENT_ID': CONFIG.CLIENT_ID || 'Missing'
         });
-        
+
         serverLog('🌍 Environment check', {
             'isInIframe': window.parent !== window,
             'currentURL': window.location.href,
             'referrer': document.referrer,
-            'hasTeamsSDK': typeof microsoftTeams !== 'undefined'
+            'hasTeamsSDK': typeof microsoftTeams !== 'undefined',
+            'userAgent': navigator.userAgent.substring(0, 100),
+            'protocol': window.location.protocol,
+            'host': window.location.host,
+            'pathname': window.location.pathname
         });
-        
-        // Add timeout for debugging stuck authentication
-        setTimeout(() => {
+
+        // Add multiple timeouts to track each step
+        const initTimeout = setTimeout(() => {
+            serverLog('⏰ Initialize timeout after 5 seconds');
+        }, 5000);
+
+        const contextTimeout = setTimeout(() => {
+            serverLog('⏰ GetContext timeout after 10 seconds');
+        }, 10000);
+
+        const authTimeout = setTimeout(() => {
+            serverLog('⏰ GetAuthToken timeout after 15 seconds');
             if (document.getElementById('loading').style.display !== 'none') {
-                serverLog('⏰ Authentication timeout after 10 seconds');
                 document.getElementById('loading').innerHTML = `
-                    <h3>⏰ Authentication Timeout</h3>
-                    <p>Check Digital Ocean app logs for detailed debugging</p>
-                    <p style="font-size: 12px; color: #666;">
-                        Common issues:<br>
-                        • Teams SSO not configured<br>
-                        • App not registered in Azure<br>
-                        • Missing tenant permissions
-                    </p>
+                    <h3>⏰ Authentication Debug Information</h3>
+                    <div style="text-align: left; max-width: 500px; margin: 0 auto; font-family: monospace; font-size: 12px;">
+                        <p><strong>Check browser console (F12) for detailed logs</strong></p>
+                        <p>Most likely issues:</p>
+                        <ul>
+                            <li>Domain not in validDomains (yours is correct)</li>
+                            <li>Azure AD SSO not configured properly</li>
+                            <li>Missing Teams client authorizations</li>
+                        </ul>
+                        <button onclick="location.reload()" style="margin-top: 15px; padding: 8px 16px; background: #0078d4; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                            Retry Authentication
+                        </button>
+                    </div>
                 `;
             }
-        }, 10000);
-        
+        }, 15000);
+
         try {
-            microsoftTeams.app.initialize();
-            serverLog('✅ Teams SDK initialized successfully');
+            serverLog('🔧 Step 1: Calling microsoftTeams.app.initialize()');
             
-            // Check if we're in Teams context
-            microsoftTeams.app.getContext().then(context => {
-                serverLog('📱 Teams context received', {
-                    'user': context.user,
-                    'tenant': context.user?.tenant,
-                    'app': context.app
-                });
+            // Test if we can call initialize with a promise
+            microsoftTeams.app.initialize().then(() => {
+                clearTimeout(initTimeout);
+                serverLog('✅ Step 1 SUCCESS: Teams SDK initialized');
                 
-                // Now try authentication with detailed logging
-                serverLog('🔐 Attempting to get auth token...');
+                // Test if we're actually in Teams
+                serverLog('🔧 Step 2: Testing Teams environment');
                 
-                microsoftTeams.authentication.getAuthToken({
-                    successCallback: (token) => {
-                        serverLog('🎫 Auth token SUCCESS', {
-                            'tokenLength': token?.length,
-                            'hasToken': !!token
+                // Check if we can access Teams context before calling getContext
+                try {
+                    serverLog('🔧 Step 2a: Calling microsoftTeams.app.getContext()');
+                    
+                    // Use both promise and callback approaches for maximum compatibility
+                    const contextPromise = microsoftTeams.app.getContext().then(context => {
+                        clearTimeout(contextTimeout);
+                        serverLog('✅ Step 2 SUCCESS: Teams context received (Promise)', {
+                            'user': context.user?.userPrincipalName,
+                            'tenant': context.user?.tenant?.id,
+                            'app': context.app?.host?.name,
+                            'theme': context.app?.theme,
+                            'locale': context.app?.locale,
+                            'channel': context.channel?.displayName,
+                            'team': context.team?.displayName
                         });
+                        
+                        // Validate tenant immediately
+                        if (context.user?.tenant?.id !== CONFIG.ALLOWED_TENANT_ID) {
+                            serverLog('❌ Tenant mismatch - STOPPING', {
+                                'expected': CONFIG.ALLOWED_TENANT_ID,
+                                'received': context.user?.tenant?.id
+                            });
+                            clearTimeout(authTimeout);
+                            showUnauthorized();
+                            return;
+                        }
+                        
+                        serverLog('🔧 Step 3: Tenant validated, calling getAuthToken()');
+                        proceedToAuthentication(context);
+                        
+                    }).catch(contextError => {
+                        clearTimeout(contextTimeout);
+                        clearTimeout(authTimeout);
+                        serverLog('❌ Step 2 FAILED: getContext() promise rejected', {
+                            'error': contextError.message,
+                            'name': contextError.name,
+                            'stack': contextError.stack,
+                            'fullError': JSON.stringify(contextError, null, 2)
+                        });
+                        showUnauthorized();
+                    });
+                    
+                    // Also try the callback approach as fallback
+                    setTimeout(() => {
+                        try {
+                            serverLog('🔧 Step 2b: Trying callback approach for getContext()');
+                            microsoftTeams.getContext((context) => {
+                                if (context) {
+                                    serverLog('✅ Step 2 SUCCESS: Teams context received (Callback)', {
+                                        'hasContext': !!context,
+                                        'contextKeys': Object.keys(context || {})
+                                    });
+                                } else {
+                                    serverLog('❌ Step 2 FAILED: getContext() callback called but context is null');
+                                }
+                            });
+                        } catch (callbackError) {
+                            serverLog('❌ Step 2b FAILED: getContext() callback approach failed', {
+                                'error': callbackError.message
+                            });
+                        }
+                    }, 1000);
+                    
+                } catch (contextCallError) {
+                    clearTimeout(contextTimeout);
+                    clearTimeout(authTimeout);
+                    serverLog('❌ Step 2 FAILED: Cannot call getContext()', {
+                        'error': contextCallError.message,
+                        'stack': contextCallError.stack
+                    });
+                    showUnauthorized();
+                }
+                
+            }).catch(initError => {
+                clearTimeout(initTimeout);
+                clearTimeout(contextTimeout);
+                clearTimeout(authTimeout);
+                serverLog('❌ Step 1 FAILED: Teams SDK initialization failed', {
+                    'error': initError.message,
+                    'name': initError.name,
+                    'stack': initError.stack
+                });
+                showUnauthorized();
+            });
+            
+        } catch (outerError) {
+            clearTimeout(initTimeout);
+            clearTimeout(contextTimeout);
+            clearTimeout(authTimeout);
+            serverLog('❌ CRITICAL ERROR: Cannot initialize Teams SDK', {
+                'error': outerError.message,
+                'stack': outerError.stack,
+                'teamsObject': typeof microsoftTeams,
+                'hasApp': !!(microsoftTeams && microsoftTeams.app),
+                'hasInitialize': !!(microsoftTeams && microsoftTeams.app && microsoftTeams.app.initialize)
+            });
+            showUnauthorized();
+        }
+
+        function proceedToAuthentication(context) {
+            serverLog('🔧 Step 3: Starting authentication with context', {
+                'userEmail': context.user?.userPrincipalName,
+                'tenantId': context.user?.tenant?.id
+            });
+            
+            try {
+                serverLog('🔧 Step 3a: Calling microsoftTeams.authentication.getAuthToken()');
+                
+                // Try both new and old API approaches
+                const authRequest = {
+                    successCallback: (token) => {
+                        clearTimeout(authTimeout);
+                        serverLog('🎫 Step 3 SUCCESS: Auth token received', {
+                            'tokenLength': token?.length,
+                            'hasToken': !!token,
+                            'tokenPreview': token ? token.substring(0, 50) + '...' : 'empty',
+                            'tokenType': typeof token
+                        });
+                        
+                        if (!token || token.trim() === '') {
+                            serverLog('❌ Empty token - treating as failure');
+                            showUnauthorized();
+                            return;
+                        }
+                        
                         validateUser(token);
                     },
                     failureCallback: (error) => {
-                        serverLog('❌ Auth token FAILURE', {
+                        clearTimeout(authTimeout);
+                        serverLog('❌ Step 3 FAILED: getAuthToken() failed', {
                             'error': error,
                             'errorCode': error?.errorCode,
                             'message': error?.message,
                             'fullError': JSON.stringify(error, null, 2)
                         });
+                        
+                        // Provide specific guidance based on error
+                        if (error?.message?.includes('resource defined in manifest')) {
+                            serverLog('💡 GUIDANCE: Manifest webApplicationInfo.resource mismatch with Azure AD');
+                        } else if (error?.message?.includes('consent')) {
+                            serverLog('💡 GUIDANCE: User consent required - check API permissions in Azure AD');
+                        } else if (error?.message?.includes('resourceDisabled')) {
+                            serverLog('💡 GUIDANCE: SSO disabled - check Azure AD app "Expose an API" configuration');
+                        }
+                        
                         showUnauthorized();
-                    }
-                });
+                    },
+                    resources: [] // Explicitly empty for Teams SSO
+                };
                 
-            }).catch(contextError => {
-                serverLog('❌ Failed to get Teams context', {
-                    'error': contextError.message,
-                    'fullError': JSON.stringify(contextError, null, 2)
+                // Call getAuthToken
+                microsoftTeams.authentication.getAuthToken(authRequest);
+                
+                // Also try the promise-based approach if available
+                if (microsoftTeams.authentication.getAuthToken.length === 0) {
+                    serverLog('🔧 Step 3b: Also trying promise-based getAuthToken()');
+                    microsoftTeams.authentication.getAuthToken()
+                        .then(token => {
+                            serverLog('🎫 Step 3b SUCCESS: Promise-based auth token', {
+                                'tokenLength': token?.length
+                            });
+                        })
+                        .catch(promiseError => {
+                            serverLog('❌ Step 3b FAILED: Promise-based getAuthToken failed', {
+                                'error': promiseError.message
+                            });
+                        });
+                }
+                
+            } catch (authError) {
+                clearTimeout(authTimeout);
+                serverLog('❌ Step 3 FAILED: Cannot call getAuthToken()', {
+                    'error': authError.message,
+                    'stack': authError.stack,
+                    'hasAuth': !!(microsoftTeams && microsoftTeams.authentication),
+                    'hasGetAuthToken': !!(microsoftTeams && microsoftTeams.authentication && microsoftTeams.authentication.getAuthToken)
                 });
                 showUnauthorized();
-            });
-            
-        } catch (initError) {
-            serverLog('❌ Teams SDK initialization failed', {
-                'error': initError.message,
-                'stack': initError.stack
-            });
-            showUnauthorized();
+            }
         }
 
         function validateUser(token) {
-            serverLog('🔍 Starting user validation');
-            serverLog('🎫 Token check', {
-                'hasToken': !!token,
-                'tokenLength': token?.length
+            serverLog('🔧 Step 4: Starting user validation', {
+                'tokenLength': token?.length,
+                'tokenType': typeof token
             });
             
             try {
@@ -1305,9 +1466,6 @@
         }
 
         // Utility Functions - None needed for this simplified version
-    </script>
-</body>
-</html>
     </script>
 </body>
 </html>
