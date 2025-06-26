@@ -679,7 +679,7 @@ async def convert_to_pdf(
         if mime_type == "application/pdf" or file_extension == "pdf":
             shutil.copy2(input_path, output_path)
             
-        # Images - use existing image-to-pdf logic with quality preservation
+        # Images - use high-quality PIL scaling then ReportLab
         elif mime_type.startswith("image/") or file_extension in ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]:
             from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import letter
@@ -702,15 +702,23 @@ async def convert_to_pdf(
             available_height = page_height - title_height - 40
             available_width = page_width - 40
             
+            # Do high-quality scaling with PIL BEFORE ReportLab
             if fit_to_letter:
                 img_width, img_height = img.size
                 scale_w = available_width / img_width
                 scale_h = available_height / img_height
                 scale = min(scale_w, scale_h)
-                new_width = img_width * scale
-                new_height = img_height * scale
+                new_width = int(img_width * scale)
+                new_height = int(img_height * scale)
+                
+                # Use high-quality resampling with PIL
+                img = img.resize((new_width, new_height), Image.LANCZOS)
             else:
                 new_width, new_height = img.size
+            
+            # Save the processed image to a temporary file for ReportLab
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            img.save(temp_image_path, 'PNG', optimize=True, quality=95)
             
             c = canvas.Canvas(output_path, pagesize=letter)
             
@@ -730,8 +738,12 @@ async def convert_to_pdf(
             
             x = (page_width - new_width) / 2
             y = (available_height - new_height) / 2 + 20
-            c.drawImage(input_path, x, y, width=new_width, height=new_height, preserveAspectRatio=True)
+            c.drawImage(temp_image_path, x, y, width=new_width, height=new_height)
             c.save()
+            
+            # Cleanup temporary processed image
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
             
         # Office documents and others - use LibreOffice
         elif (mime_type in [
@@ -771,14 +783,27 @@ async def convert_to_pdf(
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {mime_type}")
         
-        # Cleanup input file
+        # Cleanup input file and any temporary files
         if os.path.exists(input_path):
             os.remove(input_path)
+        # Also cleanup any temporary processed image files
+        try:
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+        except:
+            pass
 
     except Exception as e:
         # Cleanup on error
         if os.path.exists(input_path):
             os.remove(input_path)
+        try:
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+        except:
+            pass
         if "subprocess" in str(e) or "LibreOffice" in str(e):
             raise HTTPException(status_code=500, detail=f"Document conversion error: {str(e)}")
         else:
@@ -1108,7 +1133,7 @@ async def prepare_document(
         else:
             processing_log.append(f"Converting {mime_type} to PDF")
             
-            # Images - use ReportLab with quality preservation
+            # Images - use high-quality PIL scaling then ReportLab
             if mime_type.startswith("image/") or file_extension in ["jpg", "jpeg", "png", "gif", "bmp", "tiff"]:
                 from reportlab.pdfgen import canvas
                 from reportlab.lib.pagesizes import letter
@@ -1141,13 +1166,20 @@ async def prepare_document(
                 available_width = page_width - 40  # margins
                 available_height = page_height - 40
                 
-                # Scale to fit
+                # Scale to fit with high-quality PIL resampling
                 scale_w = available_width / img_width
                 scale_h = available_height / img_height
                 scale = min(scale_w, scale_h)
                 
-                new_width = img_width * scale
-                new_height = img_height * scale
+                new_width = int(img_width * scale)
+                new_height = int(img_height * scale)
+                
+                # Use high-quality resampling with PIL
+                img = img.resize((new_width, new_height), Image.LANCZOS)
+                
+                # Save the processed image to a temporary file for ReportLab
+                temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+                img.save(temp_image_path, 'PNG', optimize=True, quality=95)
                 
                 c = canvas.Canvas(working_path, pagesize=page_size)
                 
@@ -1160,8 +1192,12 @@ async def prepare_document(
                 
                 x = (page_width - new_width) / 2
                 y = (page_height - new_height) / 2
-                c.drawImage(input_path, x, y, width=new_width, height=new_height, preserveAspectRatio=True)
+                c.drawImage(temp_image_path, x, y, width=new_width, height=new_height)
                 c.save()
+                
+                # Cleanup temporary processed image
+                if os.path.exists(temp_image_path):
+                    os.remove(temp_image_path)
                 
             # Office documents - use LibreOffice
             elif (mime_type in [
@@ -1384,6 +1420,13 @@ async def prepare_document(
         for temp_file in [input_path, working_path]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
+        # Also cleanup any temporary processed image files
+        try:
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+        except:
+            pass
 
         # Final validation - ensure output file exists and is valid
         if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
@@ -1435,6 +1478,13 @@ async def prepare_document(
         for temp_file in [input_path, working_path, output_path]:
             if os.path.exists(temp_file):
                 os.remove(temp_file)
+        # Also cleanup any temporary processed image files
+        try:
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+        except:
+            pass
         raise HTTPException(status_code=500, detail=f"Document preparation error: {str(e)}")
 
 @app.post("/image-to-pdf", tags=["Document Conversion"])
@@ -1489,6 +1539,7 @@ async def image_to_pdf(
         from reportlab.pdfgen import canvas
         from reportlab.lib.pagesizes import letter
         from PIL import Image
+        import tempfile
         
         # Open and process image with quality preservation
         img = Image.open(input_path)
@@ -1508,18 +1559,24 @@ async def image_to_pdf(
         available_height = page_height - title_height - 40  # margins
         available_width = page_width - 40  # margins
         
+        # Do high-quality scaling with PIL BEFORE ReportLab
         if fit_to_letter:
-            # Calculate scaling to fit within available space
             img_width, img_height = img.size
             scale_w = available_width / img_width
             scale_h = available_height / img_height
             scale = min(scale_w, scale_h)  # Use smaller scale to maintain aspect ratio
             
-            new_width = img_width * scale
-            new_height = img_height * scale
+            new_width = int(img_width * scale)
+            new_height = int(img_height * scale)
+            
+            # Use high-quality resampling with PIL (much better than ReportLab)
+            img = img.resize((new_width, new_height), Image.LANCZOS)
         else:
-            # Use original size (might be clipped)
             new_width, new_height = img.size
+        
+        # Save the processed image to a temporary file for ReportLab
+        temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+        img.save(temp_image_path, 'PNG', optimize=True, quality=95)
         
         # Use custom filename if provided, otherwise default
         output_filename = f"{filename}.pdf" if filename else "image_document.pdf"
@@ -1544,22 +1601,39 @@ async def image_to_pdf(
             title_x = (page_width - text_width) / 2
             c.drawString(title_x, page_height - 35, title)  # Adjusted position for smaller font
         
-        # Add image with better quality preservation
+        # Add the pre-scaled high-quality image
         x = (page_width - new_width) / 2  # Center horizontally
         y = (available_height - new_height) / 2 + 20  # Center vertically in available space
         
-        # Use higher quality image drawing
-        c.drawImage(input_path, x, y, width=new_width, height=new_height, preserveAspectRatio=True)
+        # Draw the high-quality pre-processed image (no scaling needed by ReportLab)
+        c.drawImage(temp_image_path, x, y, width=new_width, height=new_height)
         c.save()
         
-        # Cleanup input file
+        # Cleanup temporary processed image
+        if os.path.exists(temp_image_path):
+            os.remove(temp_image_path)
+        c.save()
+        
+        # Cleanup input file and any temporary files
         if os.path.exists(input_path):
             os.remove(input_path)
+        try:
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+        except:
+            pass  # In case of path issues, don't crash
 
     except Exception as e:
         # Cleanup on error
         if os.path.exists(input_path):
             os.remove(input_path)
+        try:
+            temp_image_path = input_path.replace(os.path.splitext(input_path)[1], '_processed.png')
+            if os.path.exists(temp_image_path):
+                os.remove(temp_image_path)
+        except:
+            pass  # In case of path issues, don't crash
         raise HTTPException(status_code=500, detail=f"Image to PDF error: {str(e)}")
 
     return return_file_response(output_path, return_type, output_filename)
